@@ -30,6 +30,40 @@ class MockLocationService : Service() {
     private var currentLongitude = DEFAULT_LONGITUDE
     private var currentAltitude = DEFAULT_ALTITUDE
     private var isRunning = false
+    private val activeProviders = linkedMapOf<String, Int>()
+    private val updateRunnable = object : Runnable {
+        override fun run() {
+            if (!isRunning) {
+                return
+            }
+
+            val failedProviders = mutableListOf<String>()
+            activeProviders.forEach { (provider, accuracy) ->
+                if (!setMockLocation(provider, accuracy)) {
+                    failedProviders += provider
+                }
+            }
+            failedProviders.forEach { provider ->
+                activeProviders.remove(provider)
+                removeTestProvider(provider)
+            }
+
+            if (activeProviders.isEmpty()) {
+                broadcastStatus(
+                    isRunning = false,
+                    message = "No mock provider is available. Check mock location settings."
+                )
+                stopSelf()
+                return
+            }
+
+            broadcastStatus(
+                isRunning = true,
+                message = "Mocking via ${activeProviders.keys.joinToString()}"
+            )
+            workerHandler.postDelayed(this, UPDATE_INTERVAL_MS)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -81,24 +115,29 @@ class MockLocationService : Service() {
 
     private fun startMocking() {
         if (isRunning) {
+            broadcastStatus(
+                isRunning = true,
+                message = "Mocking via ${activeProviders.keys.joinToString()}"
+            )
             return
         }
         isRunning = true
         workerHandler.post {
             try {
                 addTestProviders()
-                while (isRunning) {
-                    setMockLocation(LocationManager.GPS_PROVIDER, ProviderProperties.ACCURACY_FINE)
-                    setMockLocation(LocationManager.NETWORK_PROVIDER, ProviderProperties.ACCURACY_COARSE)
-                    Thread.sleep(UPDATE_INTERVAL_MS)
+                if (activeProviders.isEmpty()) {
+                    throw IllegalStateException("No mock provider is available.")
                 }
+                updateRunnable.run()
             } catch (securityException: SecurityException) {
+                isRunning = false
                 broadcastStatus(
                     isRunning = false,
                     message = "Mock location permission is not enabled for this app."
                 )
                 stopSelf()
             } catch (exception: Exception) {
+                isRunning = false
                 broadcastStatus(
                     isRunning = false,
                     message = exception.message ?: "Failed to start mock location."
@@ -106,7 +145,7 @@ class MockLocationService : Service() {
                 stopSelf()
             }
         }
-        broadcastStatus(isRunning = true, message = "Mocking location")
+        broadcastStatus(isRunning = true, message = "Starting mock providers...")
     }
 
     private fun stopMocking() {
@@ -114,13 +153,16 @@ class MockLocationService : Service() {
         workerHandler.removeCallbacksAndMessages(null)
         removeTestProvider(LocationManager.GPS_PROVIDER)
         removeTestProvider(LocationManager.NETWORK_PROVIDER)
+        activeProviders.clear()
         broadcastStatus(isRunning = false, message = "Mock location stopped")
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
     private fun addTestProviders() {
+        activeProviders.clear()
         addTestProvider(
             provider = LocationManager.GPS_PROVIDER,
+            accuracy = ProviderProperties.ACCURACY_FINE,
             properties = ProviderProperties.Builder()
                 .setHasSatelliteRequirement(true)
                 .setHasAltitudeSupport(true)
@@ -132,6 +174,7 @@ class MockLocationService : Service() {
         )
         addTestProvider(
             provider = LocationManager.NETWORK_PROVIDER,
+            accuracy = ProviderProperties.ACCURACY_COARSE,
             properties = ProviderProperties.Builder()
                 .setHasNetworkRequirement(true)
                 .setHasAltitudeSupport(true)
@@ -143,24 +186,40 @@ class MockLocationService : Service() {
         )
     }
 
-    private fun addTestProvider(provider: String, properties: ProviderProperties) {
-        runCatching { locationManager.removeTestProvider(provider) }
-        locationManager.addTestProvider(provider, properties)
-        locationManager.setTestProviderEnabled(provider, true)
+    private fun addTestProvider(
+        provider: String,
+        accuracy: Int,
+        properties: ProviderProperties,
+    ) {
+        try {
+            removeTestProvider(provider)
+            locationManager.addTestProvider(provider, properties)
+            locationManager.setTestProviderEnabled(provider, true)
+            activeProviders[provider] = accuracy
+        } catch (securityException: SecurityException) {
+            throw securityException
+        } catch (exception: Exception) {
+            broadcastStatus(
+                isRunning = true,
+                message = "$provider is unavailable: ${exception.message ?: "unknown error"}"
+            )
+        }
     }
 
-    private fun setMockLocation(provider: String, accuracy: Int) {
-        val location = Location(provider).apply {
-            latitude = currentLatitude
-            longitude = currentLongitude
-            altitude = currentAltitude
-            this.accuracy = if (accuracy == ProviderProperties.ACCURACY_FINE) 5f else 50f
-            speed = 0f
-            bearing = 0f
-            time = System.currentTimeMillis()
-            elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
-        }
-        locationManager.setTestProviderLocation(provider, location)
+    private fun setMockLocation(provider: String, accuracy: Int): Boolean {
+        return runCatching {
+            val location = Location(provider).apply {
+                latitude = currentLatitude
+                longitude = currentLongitude
+                altitude = currentAltitude
+                this.accuracy = if (accuracy == ProviderProperties.ACCURACY_FINE) 5f else 50f
+                speed = 0f
+                bearing = 0f
+                time = System.currentTimeMillis()
+                elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+            }
+            locationManager.setTestProviderLocation(provider, location)
+        }.isSuccess
     }
 
     private fun removeTestProvider(provider: String) {
@@ -202,6 +261,12 @@ class MockLocationService : Service() {
     }
 
     private fun broadcastStatus(isRunning: Boolean, message: String) {
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_IS_RUNNING, isRunning)
+            .putString(KEY_STATUS_MESSAGE, message)
+            .apply()
+
         val intent = Intent(ACTION_STATUS)
             .setPackage(packageName)
             .putExtra(EXTRA_STATUS_RUNNING, isRunning)
@@ -222,7 +287,11 @@ class MockLocationService : Service() {
 
         private const val CHANNEL_ID = "mock_location"
         private const val NOTIFICATION_ID = 1001
-        private const val UPDATE_INTERVAL_MS = 1_000L
+        private const val UPDATE_INTERVAL_MS = 500L
+
+        const val PREFS_NAME = "mock_location_state"
+        const val KEY_IS_RUNNING = "is_running"
+        const val KEY_STATUS_MESSAGE = "status_message"
 
         const val DEFAULT_LATITUDE = 39.908722
         const val DEFAULT_LONGITUDE = 116.397499

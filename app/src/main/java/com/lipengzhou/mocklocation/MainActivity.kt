@@ -74,8 +74,8 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
     var latitude by rememberSaveable { mutableStateOf(MockLocationService.DEFAULT_LATITUDE.toString()) }
     var longitude by rememberSaveable { mutableStateOf(MockLocationService.DEFAULT_LONGITUDE.toString()) }
     var altitude by rememberSaveable { mutableStateOf(MockLocationService.DEFAULT_ALTITUDE.toString()) }
-    var statusText by rememberSaveable { mutableStateOf("Ready") }
-    var isRunning by rememberSaveable { mutableStateOf(false) }
+    var statusText by rememberSaveable { mutableStateOf(context.savedStatusMessage()) }
+    var isRunning by rememberSaveable { mutableStateOf(context.savedServiceRunningState()) }
     var hasLocationPermission by remember { mutableStateOf(context.hasLocationPermission()) }
     var hasNotificationPermission by remember { mutableStateOf(context.hasNotificationPermission()) }
     var hasMockLocationPermission by remember { mutableStateOf(context.canUseMockLocation()) }
@@ -91,6 +91,8 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
         hasLocationPermission = context.hasLocationPermission()
         hasNotificationPermission = context.hasNotificationPermission()
         hasMockLocationPermission = context.canUseMockLocation()
+        isRunning = context.savedServiceRunningState()
+        statusText = context.savedStatusMessage()
     }
 
     DisposableEffect(context) {
@@ -201,7 +203,6 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
 
         OutlinedButton(
             modifier = Modifier.fillMaxWidth(),
-            enabled = isRunning,
             onClick = {
                 context.stopMockLocationService()
                 isRunning = false
@@ -330,6 +331,14 @@ private fun Context.stopMockLocationService() {
         .setAction(MockLocationService.ACTION_STOP)
     startService(intent)
 }
+
+private fun Context.savedServiceRunningState(): Boolean =
+    getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(MockLocationService.KEY_IS_RUNNING, false)
+
+private fun Context.savedStatusMessage(): String =
+    getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
+        .getString(MockLocationService.KEY_STATUS_MESSAGE, "Ready") ?: "Ready"
 
 private fun Context.hasLocationPermission(): Boolean =
     ContextCompat.checkSelfPermission(
