@@ -23,7 +23,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -94,7 +96,6 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
     var lastStopTime by rememberSaveable { mutableStateOf(context.savedLastStopTimeText()) }
     var lastError by rememberSaveable { mutableStateOf(context.savedLastError()) }
     var showMapPicker by rememberSaveable { mutableStateOf(false) }
-    var isTouchingMap by remember { mutableStateOf(false) }
     var selectedMapText by rememberSaveable { mutableStateOf("尚未通过地图选点") }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -150,12 +151,29 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    if (showMapPicker) {
+        FullScreenMapPicker(
+            latitude = latitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LATITUDE,
+            longitude = longitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LONGITUDE,
+            selectedMapText = selectedMapText,
+            onBack = {
+                showMapPicker = false
+            },
+            onPointSelected = { gcj02, wgs84 ->
+                latitude = formatCoordinate(wgs84.latitude)
+                longitude = formatCoordinate(wgs84.longitude)
+                selectedMapText = "GCJ-02：${formatCoordinate(gcj02.longitude)}, ${formatCoordinate(gcj02.latitude)}\n" +
+                    "WGS84：${formatCoordinate(wgs84.longitude)}, ${formatCoordinate(wgs84.latitude)}"
+                statusText = "已从地图选点并回填 WGS84 坐标。"
+            },
+            modifier = modifier
+        )
+        return
+    }
+
     Column(
         modifier = modifier
-            .verticalScroll(
-                state = rememberScrollState(),
-                enabled = !isTouchingMap
-            )
+            .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -197,28 +215,10 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
         OutlinedButton(
             modifier = Modifier.fillMaxWidth(),
             onClick = {
-                showMapPicker = !showMapPicker
+                showMapPicker = true
             }
         ) {
-            Text(if (showMapPicker) "收起地图选点" else "打开地图选点")
-        }
-
-        if (showMapPicker) {
-            MapPickerCard(
-                latitude = latitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LATITUDE,
-                longitude = longitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LONGITUDE,
-                selectedMapText = selectedMapText,
-                onTouchStateChange = { touching ->
-                    isTouchingMap = touching
-                },
-                onPointSelected = { gcj02, wgs84 ->
-                    latitude = formatCoordinate(wgs84.latitude)
-                    longitude = formatCoordinate(wgs84.longitude)
-                    selectedMapText = "GCJ-02：${formatCoordinate(gcj02.longitude)}, ${formatCoordinate(gcj02.latitude)}\n" +
-                        "WGS84：${formatCoordinate(wgs84.longitude)}, ${formatCoordinate(wgs84.latitude)}"
-                    statusText = "已从地图选点并回填 WGS84 坐标。"
-                }
-            )
+            Text("打开地图选点")
         }
 
         SettingsCard(
@@ -419,52 +419,59 @@ private fun CoordinateInput(
 }
 
 @Composable
-private fun MapPickerCard(
+private fun FullScreenMapPicker(
     latitude: Double,
     longitude: Double,
     selectedMapText: String,
-    onTouchStateChange: (Boolean) -> Unit,
+    onBack: () -> Unit,
     onPointSelected: (gcj02: com.lipengzhou.mocklocation.map.Coordinate, wgs84: com.lipengzhou.mocklocation.map.Coordinate) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        )
+    Column(
+        modifier = modifier
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            OutlinedButton(onClick = onBack) {
+                Text("返回")
+            }
             Text(
                 text = "地图选点",
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(top = 10.dp),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Text(
-                text = "点击地图位置后，会自动转换为 WGS84 坐标并回填到上方输入框。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(360.dp)
-            ) {
-                AMapPicker(
-                    modifier = Modifier.fillMaxSize(),
-                    initialLatitude = latitude,
-                    initialLongitude = longitude,
-                    onTouchStateChange = onTouchStateChange,
-                    onPointSelected = onPointSelected
-                )
-            }
-            Text(
-                text = selectedMapText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        }
+        Text(
+            text = "点击地图位置后，会自动转换为 WGS84 坐标并回填到输入框。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            AMapPicker(
+                modifier = Modifier.fillMaxSize(),
+                initialLatitude = latitude,
+                initialLongitude = longitude,
+                onPointSelected = onPointSelected
             )
         }
+        Text(
+            text = selectedMapText,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
