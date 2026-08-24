@@ -5,10 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import android.location.provider.ProviderProperties
 import android.os.Build
@@ -32,6 +34,7 @@ class MockLocationService : Service() {
     private var currentAltitude = DEFAULT_ALTITUDE
     private var isRunning = false
     private var updateCount = 0L
+    private var realLocationWakeListener: LocationListener? = null
     private val activeProviders = linkedMapOf<String, Int>()
     private val updateRunnable = object : Runnable {
         override fun run() {
@@ -79,7 +82,7 @@ class MockLocationService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
-                stopSelf()
+                stopMocking(wakeRealLocation = true)
                 return START_NOT_STICKY
             }
 
@@ -96,7 +99,7 @@ class MockLocationService : Service() {
     }
 
     override fun onDestroy() {
-        stopMocking()
+        stopMocking(wakeRealLocation = false)
         workerThread.quitSafely()
         super.onDestroy()
     }
@@ -126,6 +129,7 @@ class MockLocationService : Service() {
         }
         isRunning = true
         updateCount = 0L
+        stopRealLocationWake()
         workerHandler.post {
             try {
                 addTestProviders()
@@ -152,15 +156,27 @@ class MockLocationService : Service() {
         broadcastStatus(isRunning = true, message = "正在启动模拟定位通道...")
     }
 
-    private fun stopMocking() {
+    private fun stopMocking(wakeRealLocation: Boolean) {
         isRunning = false
         updateCount = 0L
         workerHandler.removeCallbacksAndMessages(null)
         removeTestProvider(LocationManager.GPS_PROVIDER)
         removeTestProvider(LocationManager.NETWORK_PROVIDER)
         activeProviders.clear()
-        broadcastStatus(isRunning = false, message = "模拟定位已停止")
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        if (wakeRealLocation) {
+            broadcastStatus(isRunning = false, message = "模拟定位已停止，正在等待系统刷新真实定位...")
+            wakeRealLocationProviders()
+            workerHandler.postDelayed({
+                stopRealLocationWake()
+                broadcastStatus(isRunning = false, message = "模拟定位已停止")
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }, REAL_LOCATION_WAKE_MS)
+        } else {
+            stopRealLocationWake()
+            broadcastStatus(isRunning = false, message = "模拟定位已停止")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        }
     }
 
     private fun addTestProviders() {
@@ -242,6 +258,35 @@ class MockLocationService : Service() {
         runCatching { locationManager.removeTestProvider(provider) }
     }
 
+    @SuppressLint("MissingPermission")
+    private fun wakeRealLocationProviders() {
+        val listener = object : LocationListener {
+            override fun onLocationChanged(location: Location) = Unit
+        }
+        realLocationWakeListener = listener
+
+        listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).forEach { provider ->
+            runCatching {
+                if (locationManager.isProviderEnabled(provider)) {
+                    locationManager.requestLocationUpdates(
+                        provider,
+                        0L,
+                        0f,
+                        listener,
+                        workerThread.looper
+                    )
+                }
+            }
+        }
+    }
+
+    private fun stopRealLocationWake() {
+        realLocationWakeListener?.let { listener ->
+            runCatching { locationManager.removeUpdates(listener) }
+        }
+        realLocationWakeListener = null
+    }
+
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
@@ -313,6 +358,7 @@ class MockLocationService : Service() {
         private const val CHANNEL_ID = "mock_location"
         private const val NOTIFICATION_ID = 1001
         private const val UPDATE_INTERVAL_MS = 200L
+        private const val REAL_LOCATION_WAKE_MS = 5_000L
 
         const val PREFS_NAME = "mock_location_state"
         const val KEY_IS_RUNNING = "is_running"
