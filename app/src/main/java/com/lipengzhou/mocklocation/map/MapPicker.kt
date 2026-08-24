@@ -19,6 +19,7 @@ fun AMapPicker(
     modifier: Modifier = Modifier,
     initialLatitude: Double,
     initialLongitude: Double,
+    onTouchStateChange: (Boolean) -> Unit = {},
     onPointSelected: (gcj02: Coordinate, wgs84: Coordinate) -> Unit,
 ) {
     val context = LocalContext.current
@@ -32,12 +33,14 @@ fun AMapPicker(
                     MotionEvent.ACTION_DOWN,
                     MotionEvent.ACTION_MOVE,
                     MotionEvent.ACTION_POINTER_DOWN -> {
+                        onTouchStateChange(true)
                         view.parent?.requestDisallowInterceptTouchEvent(true)
                     }
 
                     MotionEvent.ACTION_UP,
                     MotionEvent.ACTION_CANCEL,
                     MotionEvent.ACTION_POINTER_UP -> {
+                        onTouchStateChange(false)
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                     }
                 }

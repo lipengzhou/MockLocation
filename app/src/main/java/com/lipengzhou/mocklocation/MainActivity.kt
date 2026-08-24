@@ -94,6 +94,7 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
     var lastStopTime by rememberSaveable { mutableStateOf(context.savedLastStopTimeText()) }
     var lastError by rememberSaveable { mutableStateOf(context.savedLastError()) }
     var showMapPicker by rememberSaveable { mutableStateOf(false) }
+    var isTouchingMap by remember { mutableStateOf(false) }
     var selectedMapText by rememberSaveable { mutableStateOf("尚未通过地图选点") }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -151,7 +152,10 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
 
     Column(
         modifier = modifier
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(
+                state = rememberScrollState(),
+                enabled = !isTouchingMap
+            )
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -204,6 +208,9 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
                 latitude = latitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LATITUDE,
                 longitude = longitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LONGITUDE,
                 selectedMapText = selectedMapText,
+                onTouchStateChange = { touching ->
+                    isTouchingMap = touching
+                },
                 onPointSelected = { gcj02, wgs84 ->
                     latitude = formatCoordinate(wgs84.latitude)
                     longitude = formatCoordinate(wgs84.longitude)
@@ -416,6 +423,7 @@ private fun MapPickerCard(
     latitude: Double,
     longitude: Double,
     selectedMapText: String,
+    onTouchStateChange: (Boolean) -> Unit,
     onPointSelected: (gcj02: com.lipengzhou.mocklocation.map.Coordinate, wgs84: com.lipengzhou.mocklocation.map.Coordinate) -> Unit,
 ) {
     Card(
@@ -447,6 +455,7 @@ private fun MapPickerCard(
                     modifier = Modifier.fillMaxSize(),
                     initialLatitude = latitude,
                     initialLongitude = longitude,
+                    onTouchStateChange = onTouchStateChange,
                     onPointSelected = onPointSelected
                 )
             }
