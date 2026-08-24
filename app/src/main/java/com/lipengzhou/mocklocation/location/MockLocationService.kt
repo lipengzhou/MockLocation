@@ -12,6 +12,7 @@ import android.location.Location
 import android.location.LocationManager
 import android.location.provider.ProviderProperties
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
@@ -30,6 +31,7 @@ class MockLocationService : Service() {
     private var currentLongitude = DEFAULT_LONGITUDE
     private var currentAltitude = DEFAULT_ALTITUDE
     private var isRunning = false
+    private var updateCount = 0L
     private val activeProviders = linkedMapOf<String, Int>()
     private val updateRunnable = object : Runnable {
         override fun run() {
@@ -57,9 +59,10 @@ class MockLocationService : Service() {
                 return
             }
 
+            updateCount += 1
             broadcastStatus(
                 isRunning = true,
-                message = "Mocking via ${activeProviders.keys.joinToString()}"
+                message = "Mocking via ${activeProviders.keys.joinToString()} (#$updateCount)"
             )
             workerHandler.postDelayed(this, UPDATE_INTERVAL_MS)
         }
@@ -117,11 +120,12 @@ class MockLocationService : Service() {
         if (isRunning) {
             broadcastStatus(
                 isRunning = true,
-                message = "Mocking via ${activeProviders.keys.joinToString()}"
+                message = "Mocking via ${activeProviders.keys.joinToString()} (#$updateCount)"
             )
             return
         }
         isRunning = true
+        updateCount = 0L
         workerHandler.post {
             try {
                 addTestProviders()
@@ -150,6 +154,7 @@ class MockLocationService : Service() {
 
     private fun stopMocking() {
         isRunning = false
+        updateCount = 0L
         workerHandler.removeCallbacksAndMessages(null)
         removeTestProvider(LocationManager.GPS_PROVIDER)
         removeTestProvider(LocationManager.NETWORK_PROVIDER)
@@ -213,10 +218,20 @@ class MockLocationService : Service() {
                 longitude = currentLongitude
                 altitude = currentAltitude
                 this.accuracy = if (accuracy == ProviderProperties.ACCURACY_FINE) 5f else 50f
-                speed = 0f
+                verticalAccuracyMeters = 3f
+                speed = 0.1f
+                speedAccuracyMetersPerSecond = 0.1f
                 bearing = 0f
+                bearingAccuracyDegrees = 1f
                 time = System.currentTimeMillis()
                 elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    isMock = true
+                }
+                extras = Bundle().apply {
+                    putInt("satellites", 12)
+                    putInt("satellitesvalue", 12)
+                }
             }
             locationManager.setTestProviderLocation(provider, location)
         }.isSuccess
@@ -287,7 +302,7 @@ class MockLocationService : Service() {
 
         private const val CHANNEL_ID = "mock_location"
         private const val NOTIFICATION_ID = 1001
-        private const val UPDATE_INTERVAL_MS = 500L
+        private const val UPDATE_INTERVAL_MS = 200L
 
         const val PREFS_NAME = "mock_location_state"
         const val KEY_IS_RUNNING = "is_running"
