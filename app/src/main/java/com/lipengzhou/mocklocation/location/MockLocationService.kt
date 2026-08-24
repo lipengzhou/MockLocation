@@ -53,7 +53,7 @@ class MockLocationService : Service() {
             if (activeProviders.isEmpty()) {
                 broadcastStatus(
                     isRunning = false,
-                    message = "No mock provider is available. Check mock location settings."
+                    message = "没有可用的模拟定位通道，请检查模拟位置设置。"
                 )
                 stopSelf()
                 return
@@ -62,7 +62,7 @@ class MockLocationService : Service() {
             updateCount += 1
             broadcastStatus(
                 isRunning = true,
-                message = "Mocking via ${activeProviders.keys.joinToString()} (#$updateCount)"
+                message = "正在通过 ${activeProviders.displayNames()} 注入位置（第 $updateCount 次）"
             )
             workerHandler.postDelayed(this, UPDATE_INTERVAL_MS)
         }
@@ -120,7 +120,7 @@ class MockLocationService : Service() {
         if (isRunning) {
             broadcastStatus(
                 isRunning = true,
-                message = "Mocking via ${activeProviders.keys.joinToString()} (#$updateCount)"
+                message = "正在通过 ${activeProviders.displayNames()} 注入位置（第 $updateCount 次）"
             )
             return
         }
@@ -130,26 +130,26 @@ class MockLocationService : Service() {
             try {
                 addTestProviders()
                 if (activeProviders.isEmpty()) {
-                    throw IllegalStateException("No mock provider is available.")
+                    throw IllegalStateException("没有可用的模拟定位通道。")
                 }
                 updateRunnable.run()
             } catch (securityException: SecurityException) {
                 isRunning = false
                 broadcastStatus(
                     isRunning = false,
-                    message = "Mock location permission is not enabled for this app."
+                    message = "当前应用还没有被设置为模拟位置信息应用。"
                 )
                 stopSelf()
             } catch (exception: Exception) {
                 isRunning = false
                 broadcastStatus(
                     isRunning = false,
-                    message = exception.message ?: "Failed to start mock location."
+                    message = exception.message ?: "启动模拟定位失败。"
                 )
                 stopSelf()
             }
         }
-        broadcastStatus(isRunning = true, message = "Starting mock providers...")
+        broadcastStatus(isRunning = true, message = "正在启动模拟定位通道...")
     }
 
     private fun stopMocking() {
@@ -159,7 +159,7 @@ class MockLocationService : Service() {
         removeTestProvider(LocationManager.GPS_PROVIDER)
         removeTestProvider(LocationManager.NETWORK_PROVIDER)
         activeProviders.clear()
-        broadcastStatus(isRunning = false, message = "Mock location stopped")
+        broadcastStatus(isRunning = false, message = "模拟定位已停止")
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
@@ -206,7 +206,7 @@ class MockLocationService : Service() {
         } catch (exception: Exception) {
             broadcastStatus(
                 isRunning = true,
-                message = "$provider is unavailable: ${exception.message ?: "unknown error"}"
+                message = "${provider.displayName()} 不可用：${exception.message ?: "未知错误"}"
             )
         }
     }
@@ -245,7 +245,7 @@ class MockLocationService : Service() {
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Mock location",
+            "模拟定位",
             NotificationManager.IMPORTANCE_LOW
         )
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -267,11 +267,11 @@ class MockLocationService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("MockLocation is running")
+            .setContentTitle("模拟定位运行中")
             .setContentText("$currentLatitude, $currentLongitude")
             .setContentIntent(openAppIntent)
             .setOngoing(true)
-            .addAction(0, "Stop", stopIntent)
+            .addAction(0, "停止", stopIntent)
             .build()
     }
 
@@ -288,6 +288,16 @@ class MockLocationService : Service() {
             .putExtra(EXTRA_STATUS_MESSAGE, message)
         sendBroadcast(intent)
     }
+
+    private fun Map<String, Int>.displayNames(): String =
+        keys.joinToString(separator = "、") { it.displayName() }
+
+    private fun String.displayName(): String =
+        when (this) {
+            LocationManager.GPS_PROVIDER -> "GPS"
+            LocationManager.NETWORK_PROVIDER -> "网络"
+            else -> this
+        }
 
     companion object {
         const val ACTION_START = "com.lipengzhou.mocklocation.action.START"

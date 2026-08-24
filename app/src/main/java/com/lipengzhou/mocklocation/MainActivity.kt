@@ -128,12 +128,12 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = "MockLocation",
+            text = "模拟定位",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.SemiBold
         )
         Text(
-            text = "Manual coordinate mock location MVP",
+            text = "手动输入坐标并启动系统模拟定位",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -147,17 +147,17 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
         )
 
         CoordinateInput(
-            label = "Latitude",
+            label = "纬度",
             value = latitude,
             onValueChange = { latitude = it }
         )
         CoordinateInput(
-            label = "Longitude",
+            label = "经度",
             value = longitude,
             onValueChange = { longitude = it }
         )
         CoordinateInput(
-            label = "Altitude",
+            label = "海拔（米）",
             value = altitude,
             onValueChange = { altitude = it }
         )
@@ -171,25 +171,25 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
                 val alt = altitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_ALTITUDE
                 when {
                     !context.hasLocationPermission() -> {
-                        statusText = "Location permission is required."
+                        statusText = "需要先授予定位权限。"
                         permissionLauncher.launch(requiredPermissions())
                     }
 
                     !context.hasNotificationPermission() -> {
-                        statusText = "Notification permission is required."
+                        statusText = "需要先授予通知权限。"
                         permissionLauncher.launch(requiredPermissions())
                     }
 
                     !context.canUseMockLocation() -> {
-                        statusText = "Select this app as the mock location app in Developer options."
+                        statusText = "请先在开发者选项中将本应用设置为模拟位置信息应用。"
                     }
 
                     lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0 -> {
-                        statusText = "Invalid coordinates."
+                        statusText = "经纬度格式不正确。"
                     }
 
                     else -> {
-                        statusText = "Starting mock location..."
+                        statusText = "正在启动模拟定位..."
                         context.startMockLocationService(lat, lon, alt)
                     }
                 }
@@ -198,7 +198,7 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
                 hasMockLocationPermission = context.canUseMockLocation()
             }
         ) {
-            Text("Start Mock Location")
+            Text("开始模拟定位")
         }
 
         OutlinedButton(
@@ -206,10 +206,10 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
             onClick = {
                 context.stopMockLocationService()
                 isRunning = false
-                statusText = "Stopping mock location..."
+                statusText = "正在停止模拟定位..."
             }
         ) {
-            Text("Stop")
+            Text("停止")
         }
 
         OutlinedButton(
@@ -218,7 +218,7 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
                 permissionLauncher.launch(requiredPermissions())
             }
         ) {
-            Text("Request Permissions")
+            Text("申请权限")
         }
 
         TextButton(
@@ -227,7 +227,7 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
                 context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
             }
         ) {
-            Text("Open Developer Options")
+            Text("打开开发者选项")
         }
 
         TextButton(
@@ -241,7 +241,7 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
                 )
             }
         ) {
-            Text("Open App Settings")
+            Text("打开应用设置")
         }
     }
 }
@@ -273,13 +273,13 @@ private fun StatusCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = if (isRunning) "Running" else "Stopped",
+                text = if (isRunning) "运行中" else "已停止",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            StatusLine("Location permission", hasLocationPermission)
-            StatusLine("Notification permission", hasNotificationPermission)
-            StatusLine("Mock location app", hasMockLocationPermission)
+            StatusLine("定位权限", hasLocationPermission)
+            StatusLine("通知权限", hasNotificationPermission)
+            StatusLine("模拟位置应用", hasMockLocationPermission)
             Text(
                 text = statusText,
                 style = MaterialTheme.typography.bodyMedium,
@@ -292,7 +292,7 @@ private fun StatusCard(
 @Composable
 private fun StatusLine(label: String, passed: Boolean) {
     Text(
-        text = "$label: ${if (passed) "OK" else "Required"}",
+        text = "$label：${if (passed) "已就绪" else "待处理"}",
         style = MaterialTheme.typography.bodyMedium
     )
 }
@@ -338,7 +338,7 @@ private fun Context.savedServiceRunningState(): Boolean =
 
 private fun Context.savedStatusMessage(): String =
     getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
-        .getString(MockLocationService.KEY_STATUS_MESSAGE, "Ready") ?: "Ready"
+        .getString(MockLocationService.KEY_STATUS_MESSAGE, "准备就绪") ?: "准备就绪"
 
 private fun Context.hasLocationPermission(): Boolean =
     ContextCompat.checkSelfPermission(
