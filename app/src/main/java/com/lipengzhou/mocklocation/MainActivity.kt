@@ -17,10 +17,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -52,7 +54,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.startForegroundService
 import com.lipengzhou.mocklocation.location.MockLocationService
+import com.lipengzhou.mocklocation.map.AMapPicker
 import com.lipengzhou.mocklocation.ui.theme.MockLocationTheme
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,6 +93,8 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
     var wakeDurationMs by rememberSaveable { mutableStateOf(context.savedWakeDurationMs()) }
     var lastStopTime by rememberSaveable { mutableStateOf(context.savedLastStopTimeText()) }
     var lastError by rememberSaveable { mutableStateOf(context.savedLastError()) }
+    var showMapPicker by rememberSaveable { mutableStateOf(false) }
+    var selectedMapText by rememberSaveable { mutableStateOf("尚未通过地图选点") }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -183,6 +189,30 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
             value = altitude,
             onValueChange = { altitude = it }
         )
+
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                showMapPicker = !showMapPicker
+            }
+        ) {
+            Text(if (showMapPicker) "收起地图选点" else "打开地图选点")
+        }
+
+        if (showMapPicker) {
+            MapPickerCard(
+                latitude = latitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LATITUDE,
+                longitude = longitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LONGITUDE,
+                selectedMapText = selectedMapText,
+                onPointSelected = { gcj02, wgs84 ->
+                    latitude = formatCoordinate(wgs84.latitude)
+                    longitude = formatCoordinate(wgs84.longitude)
+                    selectedMapText = "GCJ-02：${formatCoordinate(gcj02.longitude)}, ${formatCoordinate(gcj02.latitude)}\n" +
+                        "WGS84：${formatCoordinate(wgs84.longitude)}, ${formatCoordinate(wgs84.latitude)}"
+                    statusText = "已从地图选点并回填 WGS84 坐标。"
+                }
+            )
+        }
 
         SettingsCard(
             updateIntervalMs = updateIntervalMs,
@@ -379,6 +409,54 @@ private fun CoordinateInput(
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
     )
+}
+
+@Composable
+private fun MapPickerCard(
+    latitude: Double,
+    longitude: Double,
+    selectedMapText: String,
+    onPointSelected: (gcj02: com.lipengzhou.mocklocation.map.Coordinate, wgs84: com.lipengzhou.mocklocation.map.Coordinate) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "地图选点",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "点击地图位置后，会自动转换为 WGS84 坐标并回填到上方输入框。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(360.dp)
+            ) {
+                AMapPicker(
+                    modifier = Modifier.fillMaxSize(),
+                    initialLatitude = latitude,
+                    initialLongitude = longitude,
+                    onPointSelected = onPointSelected
+                )
+            }
+            Text(
+                text = selectedMapText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 @Composable
@@ -606,6 +684,9 @@ private fun Context.copyToClipboard(text: String) {
     val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboardManager.setPrimaryClip(ClipData.newPlainText("模拟定位诊断", text))
 }
+
+private fun formatCoordinate(value: Double): String =
+    String.format(Locale.US, "%.8f", value)
 
 private fun buildDiagnosticText(
     isRunning: Boolean,
