@@ -1,6 +1,7 @@
 package com.lipengzhou.mocklocation.map
 
 import android.os.Bundle
+import android.view.MotionEvent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -26,6 +27,22 @@ fun AMapPicker(
         MapsInitializer.updatePrivacyAgree(context, true)
         MapView(context).apply {
             onCreate(Bundle())
+            setOnTouchListener { view, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN,
+                    MotionEvent.ACTION_MOVE,
+                    MotionEvent.ACTION_POINTER_DOWN -> {
+                        view.parent?.requestDisallowInterceptTouchEvent(true)
+                    }
+
+                    MotionEvent.ACTION_UP,
+                    MotionEvent.ACTION_CANCEL,
+                    MotionEvent.ACTION_POINTER_UP -> {
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                    }
+                }
+                false
+            }
         }
     }
 
