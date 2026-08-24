@@ -308,8 +308,8 @@ class MockLocationService : Service() {
         const val KEY_IS_RUNNING = "is_running"
         const val KEY_STATUS_MESSAGE = "status_message"
 
-        const val DEFAULT_LATITUDE = 39.908722
-        const val DEFAULT_LONGITUDE = 116.397499
+        const val DEFAULT_LATITUDE = 40.08
+        const val DEFAULT_LONGITUDE = 116.33
         const val DEFAULT_ALTITUDE = 45.0
     }
 }
