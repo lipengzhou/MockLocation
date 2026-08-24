@@ -1,6 +1,8 @@
 package com.lipengzhou.mocklocation
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -16,6 +18,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -29,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.DisposableEffect
@@ -79,6 +83,12 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
     var hasLocationPermission by remember { mutableStateOf(context.hasLocationPermission()) }
     var hasNotificationPermission by remember { mutableStateOf(context.hasNotificationPermission()) }
     var hasMockLocationPermission by remember { mutableStateOf(context.canUseMockLocation()) }
+    var updateCount by rememberSaveable { mutableStateOf(context.savedUpdateCount()) }
+    var providerNames by rememberSaveable { mutableStateOf(context.savedProviderNames()) }
+    var updateIntervalMs by rememberSaveable { mutableStateOf(context.savedUpdateIntervalMs()) }
+    var wakeDurationMs by rememberSaveable { mutableStateOf(context.savedWakeDurationMs()) }
+    var lastStopTime by rememberSaveable { mutableStateOf(context.savedLastStopTimeText()) }
+    var lastError by rememberSaveable { mutableStateOf(context.savedLastError()) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -93,6 +103,12 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
         hasMockLocationPermission = context.canUseMockLocation()
         isRunning = context.savedServiceRunningState()
         statusText = context.savedStatusMessage()
+        updateCount = context.savedUpdateCount()
+        providerNames = context.savedProviderNames()
+        updateIntervalMs = context.savedUpdateIntervalMs()
+        wakeDurationMs = context.savedWakeDurationMs()
+        lastStopTime = context.savedLastStopTimeText()
+        lastError = context.savedLastError()
     }
 
     DisposableEffect(context) {
@@ -107,6 +123,12 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
                         MockLocationService.EXTRA_STATUS_MESSAGE
                     ) ?: statusText
                     hasMockLocationPermission = receiverContext.canUseMockLocation()
+                    updateCount = receiverContext.savedUpdateCount()
+                    providerNames = receiverContext.savedProviderNames()
+                    updateIntervalMs = receiverContext.savedUpdateIntervalMs()
+                    wakeDurationMs = receiverContext.savedWakeDurationMs()
+                    lastStopTime = receiverContext.savedLastStopTimeText()
+                    lastError = receiverContext.savedLastError()
                 }
             }
         }
@@ -160,6 +182,21 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
             label = "海拔（米）",
             value = altitude,
             onValueChange = { altitude = it }
+        )
+
+        SettingsCard(
+            updateIntervalMs = updateIntervalMs,
+            wakeDurationMs = wakeDurationMs,
+            onUpdateIntervalChange = { value ->
+                context.saveUpdateIntervalMs(value)
+                updateIntervalMs = value
+                statusText = "注入间隔已设置为 ${value}ms。"
+            },
+            onWakeDurationChange = { value ->
+                context.saveWakeDurationMs(value)
+                wakeDurationMs = value
+                statusText = "停止后真实定位恢复时长已设置为 ${value / 1000} 秒。"
+            }
         )
 
         Button(
@@ -243,6 +280,37 @@ private fun MockLocationScreen(modifier: Modifier = Modifier) {
         ) {
             Text("打开应用设置")
         }
+
+        DiagnosticCard(
+            isRunning = isRunning,
+            providerNames = providerNames,
+            updateCount = updateCount,
+            updateIntervalMs = updateIntervalMs,
+            wakeDurationMs = wakeDurationMs,
+            lastStopTime = lastStopTime,
+            lastError = lastError,
+            hasGpsProvider = context.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER),
+            hasNetworkProvider = context.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER),
+            onCopy = {
+                val diagnosticText = buildDiagnosticText(
+                    isRunning = isRunning,
+                    statusText = statusText,
+                    providerNames = providerNames,
+                    updateCount = updateCount,
+                    updateIntervalMs = updateIntervalMs,
+                    wakeDurationMs = wakeDurationMs,
+                    lastStopTime = lastStopTime,
+                    lastError = lastError,
+                    hasGpsProvider = context.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER),
+                    hasNetworkProvider = context.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER),
+                    hasLocationPermission = context.hasLocationPermission(),
+                    hasNotificationPermission = context.hasNotificationPermission(),
+                    hasMockLocationPermission = context.canUseMockLocation()
+                )
+                context.copyToClipboard(diagnosticText)
+                statusText = "诊断信息已复制。"
+            }
+        )
     }
 }
 
@@ -313,6 +381,106 @@ private fun CoordinateInput(
     )
 }
 
+@Composable
+private fun SettingsCard(
+    updateIntervalMs: Long,
+    wakeDurationMs: Long,
+    onUpdateIntervalChange: (Long) -> Unit,
+    onWakeDurationChange: (Long) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "稳定性设置",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "注入间隔",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(200L, 500L, 1000L).forEach { value ->
+                    SuggestionChip(
+                        onClick = { onUpdateIntervalChange(value) },
+                        label = { Text(if (value == updateIntervalMs) "${value}ms ✓" else "${value}ms") }
+                    )
+                }
+            }
+            Text(
+                text = "停止后恢复真实定位",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(0L, 5_000L, 10_000L).forEach { value ->
+                    val label = if (value == 0L) "关闭" else "${value / 1000}秒"
+                    SuggestionChip(
+                        onClick = { onWakeDurationChange(value) },
+                        label = { Text(if (value == wakeDurationMs) "$label ✓" else label) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticCard(
+    isRunning: Boolean,
+    providerNames: String,
+    updateCount: Long,
+    updateIntervalMs: Long,
+    wakeDurationMs: Long,
+    lastStopTime: String,
+    lastError: String,
+    hasGpsProvider: Boolean,
+    hasNetworkProvider: Boolean,
+    onCopy: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "运行诊断",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text("服务状态：${if (isRunning) "运行中" else "已停止"}")
+            Text("当前通道：$providerNames")
+            Text("注入次数：$updateCount")
+            Text("注入间隔：${updateIntervalMs}ms")
+            Text("停止恢复：${if (wakeDurationMs == 0L) "关闭" else "${wakeDurationMs / 1000}秒"}")
+            Text("最近停止：$lastStopTime")
+            Text("最近错误：$lastError")
+            Text("GPS Provider：${if (hasGpsProvider) "已开启" else "未开启"}")
+            Text("网络 Provider：${if (hasNetworkProvider) "已开启" else "未开启"}")
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onCopy
+            ) {
+                Text("复制诊断信息")
+            }
+        }
+    }
+}
+
 private fun Context.startMockLocationService(
     latitude: Double,
     longitude: Double,
@@ -339,6 +507,57 @@ private fun Context.savedServiceRunningState(): Boolean =
 private fun Context.savedStatusMessage(): String =
     getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
         .getString(MockLocationService.KEY_STATUS_MESSAGE, "准备就绪") ?: "准备就绪"
+
+private fun Context.savedUpdateCount(): Long =
+    getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
+        .getLong(MockLocationService.KEY_UPDATE_COUNT, 0L)
+
+private fun Context.savedProviderNames(): String =
+    getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
+        .getString(MockLocationService.KEY_PROVIDER_NAMES, "无") ?: "无"
+
+private fun Context.savedUpdateIntervalMs(): Long =
+    getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
+        .getLong(
+            MockLocationService.KEY_UPDATE_INTERVAL_MS,
+            MockLocationService.DEFAULT_UPDATE_INTERVAL_MS
+        )
+
+private fun Context.savedWakeDurationMs(): Long =
+    getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
+        .getLong(
+            MockLocationService.KEY_WAKE_DURATION_MS,
+            MockLocationService.DEFAULT_WAKE_DURATION_MS
+        )
+
+private fun Context.savedLastStopTimeText(): String {
+    val timeMs = getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
+        .getLong(MockLocationService.KEY_LAST_STOP_TIME_MS, 0L)
+    return if (timeMs <= 0L) {
+        "无"
+    } else {
+        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+            .format(java.util.Date(timeMs))
+    }
+}
+
+private fun Context.savedLastError(): String =
+    getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
+        .getString(MockLocationService.KEY_LAST_ERROR, "无") ?: "无"
+
+private fun Context.saveUpdateIntervalMs(value: Long) {
+    getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putLong(MockLocationService.KEY_UPDATE_INTERVAL_MS, value)
+        .apply()
+}
+
+private fun Context.saveWakeDurationMs(value: Long) {
+    getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putLong(MockLocationService.KEY_WAKE_DURATION_MS, value)
+        .apply()
+}
 
 private fun Context.hasLocationPermission(): Boolean =
     ContextCompat.checkSelfPermission(
@@ -375,6 +594,47 @@ private fun Context.canUseMockLocation(): Boolean {
         locationManager.removeTestProvider(provider)
         true
     }.getOrDefault(false)
+}
+
+private fun Context.isProviderEnabled(provider: String): Boolean =
+    runCatching {
+        val locationManager = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        locationManager.isProviderEnabled(provider)
+    }.getOrDefault(false)
+
+private fun Context.copyToClipboard(text: String) {
+    val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboardManager.setPrimaryClip(ClipData.newPlainText("模拟定位诊断", text))
+}
+
+private fun buildDiagnosticText(
+    isRunning: Boolean,
+    statusText: String,
+    providerNames: String,
+    updateCount: Long,
+    updateIntervalMs: Long,
+    wakeDurationMs: Long,
+    lastStopTime: String,
+    lastError: String,
+    hasGpsProvider: Boolean,
+    hasNetworkProvider: Boolean,
+    hasLocationPermission: Boolean,
+    hasNotificationPermission: Boolean,
+    hasMockLocationPermission: Boolean,
+): String = buildString {
+    appendLine("服务状态：${if (isRunning) "运行中" else "已停止"}")
+    appendLine("状态消息：$statusText")
+    appendLine("当前通道：$providerNames")
+    appendLine("注入次数：$updateCount")
+    appendLine("注入间隔：${updateIntervalMs}ms")
+    appendLine("停止恢复：${if (wakeDurationMs == 0L) "关闭" else "${wakeDurationMs / 1000}秒"}")
+    appendLine("最近停止：$lastStopTime")
+    appendLine("最近错误：$lastError")
+    appendLine("GPS Provider：${if (hasGpsProvider) "已开启" else "未开启"}")
+    appendLine("网络 Provider：${if (hasNetworkProvider) "已开启" else "未开启"}")
+    appendLine("定位权限：${if (hasLocationPermission) "已就绪" else "待处理"}")
+    appendLine("通知权限：${if (hasNotificationPermission) "已就绪" else "待处理"}")
+    appendLine("模拟位置应用：${if (hasMockLocationPermission) "已就绪" else "待处理"}")
 }
 
 private fun requiredPermissions(): Array<String> {

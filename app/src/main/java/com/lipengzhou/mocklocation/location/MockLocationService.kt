@@ -42,6 +42,7 @@ class MockLocationService : Service() {
                 return
             }
 
+            val updateIntervalMs = getUpdateIntervalMs()
             val failedProviders = mutableListOf<String>()
             activeProviders.forEach { (provider, accuracy) ->
                 if (!setMockLocation(provider, accuracy)) {
@@ -65,9 +66,12 @@ class MockLocationService : Service() {
             updateCount += 1
             broadcastStatus(
                 isRunning = true,
-                message = "正在通过 ${activeProviders.displayNames()} 注入位置（第 $updateCount 次）"
+                message = "正在通过 ${activeProviders.displayNames()} 注入位置（第 $updateCount 次）",
+                updateCount = updateCount,
+                providerNames = activeProviders.displayNames(),
+                updateIntervalMs = updateIntervalMs
             )
-            workerHandler.postDelayed(this, UPDATE_INTERVAL_MS)
+            workerHandler.postDelayed(this, updateIntervalMs)
         }
     }
 
@@ -123,7 +127,10 @@ class MockLocationService : Service() {
         if (isRunning) {
             broadcastStatus(
                 isRunning = true,
-                message = "正在通过 ${activeProviders.displayNames()} 注入位置（第 $updateCount 次）"
+                message = "正在通过 ${activeProviders.displayNames()} 注入位置（第 $updateCount 次）",
+                updateCount = updateCount,
+                providerNames = activeProviders.displayNames(),
+                updateIntervalMs = getUpdateIntervalMs()
             )
             return
         }
@@ -141,19 +148,25 @@ class MockLocationService : Service() {
                 isRunning = false
                 broadcastStatus(
                     isRunning = false,
-                    message = "当前应用还没有被设置为模拟位置信息应用。"
+                    message = "当前应用还没有被设置为模拟位置信息应用。",
+                    lastError = "缺少模拟位置授权"
                 )
                 stopSelf()
             } catch (exception: Exception) {
                 isRunning = false
                 broadcastStatus(
                     isRunning = false,
-                    message = exception.message ?: "启动模拟定位失败。"
+                    message = exception.message ?: "启动模拟定位失败。",
+                    lastError = exception.message ?: "启动模拟定位失败"
                 )
                 stopSelf()
             }
         }
-        broadcastStatus(isRunning = true, message = "正在启动模拟定位通道...")
+        broadcastStatus(
+            isRunning = true,
+            message = "正在启动模拟定位通道...",
+            updateIntervalMs = getUpdateIntervalMs()
+        )
     }
 
     private fun stopMocking(wakeRealLocation: Boolean) {
@@ -164,17 +177,48 @@ class MockLocationService : Service() {
         removeTestProvider(LocationManager.NETWORK_PROVIDER)
         activeProviders.clear()
         if (wakeRealLocation) {
-            broadcastStatus(isRunning = false, message = "模拟定位已停止，正在等待系统刷新真实定位...")
+            val wakeDurationMs = getRealLocationWakeMs()
+            broadcastStatus(
+                isRunning = false,
+                message = if (wakeDurationMs > 0L) {
+                    "模拟定位已停止，正在等待系统刷新真实定位..."
+                } else {
+                    "模拟定位已停止"
+                },
+                updateCount = 0L,
+                providerNames = "无",
+                wakeDurationMs = wakeDurationMs,
+                lastStopTimeMs = System.currentTimeMillis()
+            )
+            if (wakeDurationMs <= 0L) {
+                stopRealLocationWake()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return
+            }
             wakeRealLocationProviders()
             workerHandler.postDelayed({
                 stopRealLocationWake()
-                broadcastStatus(isRunning = false, message = "模拟定位已停止")
+                broadcastStatus(
+                    isRunning = false,
+                    message = "模拟定位已停止",
+                    updateCount = 0L,
+                    providerNames = "无",
+                    wakeDurationMs = wakeDurationMs,
+                    lastStopTimeMs = System.currentTimeMillis()
+                )
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
-            }, REAL_LOCATION_WAKE_MS)
+            }, wakeDurationMs)
         } else {
             stopRealLocationWake()
-            broadcastStatus(isRunning = false, message = "模拟定位已停止")
+            broadcastStatus(
+                isRunning = false,
+                message = "模拟定位已停止",
+                updateCount = 0L,
+                providerNames = "无",
+                lastStopTimeMs = System.currentTimeMillis()
+            )
             stopForeground(STOP_FOREGROUND_REMOVE)
         }
     }
@@ -222,7 +266,8 @@ class MockLocationService : Service() {
         } catch (exception: Exception) {
             broadcastStatus(
                 isRunning = true,
-                message = "${provider.displayName()} 不可用：${exception.message ?: "未知错误"}"
+                message = "${provider.displayName()} 不可用：${exception.message ?: "未知错误"}",
+                lastError = "${provider.displayName()} 不可用：${exception.message ?: "未知错误"}"
             )
         }
     }
@@ -296,6 +341,14 @@ class MockLocationService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
+    private fun getUpdateIntervalMs(): Long =
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getLong(KEY_UPDATE_INTERVAL_MS, DEFAULT_UPDATE_INTERVAL_MS)
+
+    private fun getRealLocationWakeMs(): Long =
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getLong(KEY_WAKE_DURATION_MS, DEFAULT_WAKE_DURATION_MS)
+
     private fun buildNotification(): Notification {
         val openAppIntent = PendingIntent.getActivity(
             this,
@@ -320,11 +373,28 @@ class MockLocationService : Service() {
             .build()
     }
 
-    private fun broadcastStatus(isRunning: Boolean, message: String) {
+    private fun broadcastStatus(
+        isRunning: Boolean,
+        message: String,
+        updateCount: Long? = null,
+        providerNames: String? = null,
+        updateIntervalMs: Long? = null,
+        wakeDurationMs: Long? = null,
+        lastStopTimeMs: Long? = null,
+        lastError: String? = null,
+    ) {
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_IS_RUNNING, isRunning)
             .putString(KEY_STATUS_MESSAGE, message)
+            .apply {
+                updateCount?.let { putLong(KEY_UPDATE_COUNT, it) }
+                providerNames?.let { putString(KEY_PROVIDER_NAMES, it) }
+                updateIntervalMs?.let { putLong(KEY_UPDATE_INTERVAL_MS, it) }
+                wakeDurationMs?.let { putLong(KEY_WAKE_DURATION_MS, it) }
+                lastStopTimeMs?.let { putLong(KEY_LAST_STOP_TIME_MS, it) }
+                lastError?.let { putString(KEY_LAST_ERROR, it) }
+            }
             .apply()
 
         val intent = Intent(ACTION_STATUS)
@@ -357,12 +427,19 @@ class MockLocationService : Service() {
 
         private const val CHANNEL_ID = "mock_location"
         private const val NOTIFICATION_ID = 1001
-        private const val UPDATE_INTERVAL_MS = 200L
-        private const val REAL_LOCATION_WAKE_MS = 5_000L
 
         const val PREFS_NAME = "mock_location_state"
         const val KEY_IS_RUNNING = "is_running"
         const val KEY_STATUS_MESSAGE = "status_message"
+        const val KEY_UPDATE_COUNT = "update_count"
+        const val KEY_PROVIDER_NAMES = "provider_names"
+        const val KEY_UPDATE_INTERVAL_MS = "update_interval_ms"
+        const val KEY_WAKE_DURATION_MS = "wake_duration_ms"
+        const val KEY_LAST_STOP_TIME_MS = "last_stop_time_ms"
+        const val KEY_LAST_ERROR = "last_error"
+
+        const val DEFAULT_UPDATE_INTERVAL_MS = 200L
+        const val DEFAULT_WAKE_DURATION_MS = 5_000L
 
         const val DEFAULT_LATITUDE = 40.08
         const val DEFAULT_LONGITUDE = 116.33
