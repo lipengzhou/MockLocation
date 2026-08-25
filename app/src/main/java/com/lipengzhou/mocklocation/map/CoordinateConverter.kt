@@ -31,6 +31,25 @@ object CoordinateConverter {
         )
     }
 
+    fun wgs84ToGcj02(latitude: Double, longitude: Double): Coordinate {
+        if (isOutOfChina(latitude, longitude)) {
+            return Coordinate(latitude = latitude, longitude = longitude)
+        }
+
+        var dLat = transformLat(longitude - 105.0, latitude - 35.0)
+        var dLon = transformLon(longitude - 105.0, latitude - 35.0)
+        val radLat = latitude / 180.0 * PI
+        var magic = sin(radLat)
+        magic = 1 - EE * magic * magic
+        val sqrtMagic = sqrt(magic)
+        dLat = (dLat * 180.0) / ((A * (1 - EE)) / (magic * sqrtMagic) * PI)
+        dLon = (dLon * 180.0) / (A / sqrtMagic * cos(radLat) * PI)
+        return Coordinate(
+            latitude = latitude + dLat,
+            longitude = longitude + dLon
+        )
+    }
+
     private fun isOutOfChina(latitude: Double, longitude: Double): Boolean {
         return longitude < 72.004 ||
             longitude > 137.8347 ||
