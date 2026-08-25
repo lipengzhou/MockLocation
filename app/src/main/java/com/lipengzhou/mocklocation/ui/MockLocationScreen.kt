@@ -10,13 +10,14 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,6 +49,7 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -82,6 +85,7 @@ import androidx.compose.ui.window.Dialog
 import com.lipengzhou.mocklocation.location.MockLocationService
 import com.lipengzhou.mocklocation.map.AMapPicker
 import com.lipengzhou.mocklocation.map.Coordinate
+import com.lipengzhou.mocklocation.map.CoordinateInputSystem
 import com.lipengzhou.mocklocation.map.MapSearchResult
 import com.lipengzhou.mocklocation.state.AppPage
 import com.lipengzhou.mocklocation.state.MockLocationUiState
@@ -105,6 +109,11 @@ fun MockLocationScreen(
     onSearchResultSelected: (MapSearchResult) -> Unit = {},
     onSearchHistoryDelete: (String) -> Unit = {},
     onPointSelected: (gcj02: Coordinate, wgs84: Coordinate) -> Unit = { _, _ -> },
+    onCoordinateInputConfirmed: (
+        longitude: String,
+        latitude: String,
+        coordinateSystem: CoordinateInputSystem,
+    ) -> Boolean = { _, _, _ -> false },
     onLocateCurrentPosition: () -> Unit = {},
     onStart: () -> Unit = {},
     onStop: () -> Unit = {},
@@ -148,6 +157,7 @@ fun MockLocationScreen(
                 },
                 onSearchClick = onSearchClick,
                 onPointSelected = onPointSelected,
+                onCoordinateInputConfirmed = onCoordinateInputConfirmed,
                 onLocateCurrentPosition = onLocateCurrentPosition,
                 onStart = onStart,
                 onStop = onStop,
@@ -269,11 +279,18 @@ private fun MapHomePage(
     onMenuClick: () -> Unit,
     onSearchClick: () -> Unit,
     onPointSelected: (gcj02: Coordinate, wgs84: Coordinate) -> Unit,
+    onCoordinateInputConfirmed: (
+        longitude: String,
+        latitude: String,
+        coordinateSystem: CoordinateInputSystem,
+    ) -> Boolean,
     onLocateCurrentPosition: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var showCoordinateInputDialog by remember { mutableStateOf(false) }
+
     Box(modifier = modifier.fillMaxSize()) {
         AMapPicker(
             modifier = Modifier.fillMaxSize(),
@@ -281,6 +298,7 @@ private fun MapHomePage(
             initialLongitude = longitude,
             selectedCoordinate = selectedCoordinate,
             zoomControlsBottomPadding = 188.dp,
+            onCoordinateInputClick = { showCoordinateInputDialog = true },
             onLocateCurrentPosition = onLocateCurrentPosition,
             onPointSelected = onPointSelected
         )
@@ -399,6 +417,151 @@ private fun MapHomePage(
                 }
             }
         }
+    }
+
+    if (showCoordinateInputDialog) {
+        CoordinateInputDialog(
+            onDismiss = { showCoordinateInputDialog = false },
+            onConfirm = { inputLongitude, inputLatitude, coordinateSystem ->
+                val accepted = onCoordinateInputConfirmed(
+                    inputLongitude,
+                    inputLatitude,
+                    coordinateSystem
+                )
+                if (accepted) {
+                    showCoordinateInputDialog = false
+                }
+                accepted
+            }
+        )
+    }
+}
+
+@Composable
+private fun CoordinateInputDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (
+        longitude: String,
+        latitude: String,
+        coordinateSystem: CoordinateInputSystem,
+    ) -> Boolean,
+) {
+    var longitude by remember { mutableStateOf("") }
+    var latitude by remember { mutableStateOf("") }
+    var coordinateSystem by remember { mutableStateOf(CoordinateInputSystem.GPS) }
+    var showError by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "输入坐标",
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = longitude,
+                    onValueChange = {
+                        longitude = it
+                        showError = false
+                    },
+                    placeholder = { Text("经度") },
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    singleLine = true,
+                    isError = showError,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                )
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = latitude,
+                    onValueChange = {
+                        latitude = it
+                        showError = false
+                    },
+                    placeholder = { Text("纬度") },
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    singleLine = true,
+                    isError = showError,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                )
+                if (showError) {
+                    Text(
+                        text = "请输入有效的经度和纬度。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CoordinateSystemOption(
+                        text = "BD09 坐标系",
+                        selected = coordinateSystem == CoordinateInputSystem.BD09,
+                        onClick = { coordinateSystem = CoordinateInputSystem.BD09 }
+                    )
+                    Spacer(modifier = Modifier.width(20.dp))
+                    CoordinateSystemOption(
+                        text = "GPS 坐标系",
+                        selected = coordinateSystem == CoordinateInputSystem.GPS,
+                        onClick = { coordinateSystem = CoordinateInputSystem.GPS }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                OutlinedButton(onClick = onDismiss) {
+                    Text("取消")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        val accepted = onConfirm(longitude, latitude, coordinateSystem)
+                        if (!accepted) {
+                            showError = true
+                        }
+                    }
+                ) {
+                    Text("确定")
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun CoordinateSystemOption(
+    modifier: Modifier = Modifier,
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = modifier
+            .height(40.dp)
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = onClick
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            softWrap = false
+        )
     }
 }
 

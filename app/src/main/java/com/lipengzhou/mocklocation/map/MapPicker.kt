@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Icon
@@ -49,6 +50,7 @@ fun AMapPicker(
     ),
     zoomControlsBottomPadding: Dp = 24.dp,
     onTouchStateChange: (Boolean) -> Unit = {},
+    onCoordinateInputClick: () -> Unit = {},
     onLocateCurrentPosition: () -> Unit = {},
     onPointSelected: (gcj02: Coordinate, wgs84: Coordinate) -> Unit,
 ) {
@@ -115,6 +117,7 @@ fun AMapPicker(
             onZoomOut = {
                 mapView.map.animateCamera(CameraUpdateFactory.zoomOut())
             },
+            onCoordinateInputClick = onCoordinateInputClick,
             onLocateCurrentPosition = onLocateCurrentPosition
         )
     }
@@ -141,10 +144,33 @@ private const val DEFAULT_ZOOM = 16f
 private fun MapZoomControls(
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
+    onCoordinateInputClick: () -> Unit,
     onLocateCurrentPosition: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
+        MapControlButton(
+            contentDescription = "输入坐标",
+            onClick = onCoordinateInputClick
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Edit,
+                contentDescription = null,
+                modifier = Modifier.size(MapControlIconSize)
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        MapControlButton(
+            contentDescription = "定位到当前位置",
+            onClick = onLocateCurrentPosition
+        ) {
+            Icon(
+                imageVector = Icons.Filled.MyLocation,
+                contentDescription = null,
+                modifier = Modifier.size(MapControlIconSize)
+            )
+        }
+        Spacer(modifier = Modifier.height(10.dp))
         Column {
             MapControlButton(
                 contentDescription = "放大地图",
@@ -166,17 +192,6 @@ private fun MapZoomControls(
                     modifier = Modifier.size(MapControlIconSize)
                 )
             }
-        }
-        Spacer(modifier = Modifier.height(10.dp))
-        MapControlButton(
-            contentDescription = "定位到当前位置",
-            onClick = onLocateCurrentPosition
-        ) {
-            Icon(
-                imageVector = Icons.Filled.MyLocation,
-                contentDescription = null,
-                modifier = Modifier.size(MapControlIconSize)
-            )
         }
     }
 }

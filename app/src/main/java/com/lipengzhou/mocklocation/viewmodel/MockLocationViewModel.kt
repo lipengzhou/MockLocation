@@ -9,6 +9,7 @@ import com.lipengzhou.mocklocation.location.MockLocationService
 import com.lipengzhou.mocklocation.location.MockLocationSystemController
 import com.lipengzhou.mocklocation.map.Coordinate
 import com.lipengzhou.mocklocation.map.CoordinateConverter
+import com.lipengzhou.mocklocation.map.CoordinateInputSystem
 import com.lipengzhou.mocklocation.map.MapSearchRepository
 import com.lipengzhou.mocklocation.map.MapSearchResult
 import com.lipengzhou.mocklocation.map.formatCoordinate
@@ -209,6 +210,49 @@ class MockLocationViewModel(
             message = "已从地图选点并回填 WGS84 坐标。"
         )
         reverseGeocodeMapPoint(gcj02)
+    }
+
+    fun onCoordinateInputConfirmed(
+        longitude: String,
+        latitude: String,
+        coordinateSystem: CoordinateInputSystem,
+    ): Boolean {
+        val lon = longitude.trim().toDoubleOrNull()
+        val lat = latitude.trim().toDoubleOrNull()
+        if (lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
+            _uiState.update { it.copy(statusText = "经纬度格式不正确。") }
+            return false
+        }
+
+        val gcj02 = when (coordinateSystem) {
+            CoordinateInputSystem.BD09 -> CoordinateConverter.bd09ToGcj02(
+                latitude = lat,
+                longitude = lon
+            )
+            CoordinateInputSystem.GPS -> CoordinateConverter.wgs84ToGcj02(
+                latitude = lat,
+                longitude = lon
+            )
+        }
+        val wgs84 = when (coordinateSystem) {
+            CoordinateInputSystem.BD09 -> CoordinateConverter.gcj02ToWgs84(
+                latitude = gcj02.latitude,
+                longitude = gcj02.longitude
+            )
+            CoordinateInputSystem.GPS -> Coordinate(
+                latitude = lat,
+                longitude = lon
+            )
+        }
+
+        updateSelectedMapPoint(
+            gcj02 = gcj02,
+            wgs84 = wgs84,
+            selectedMapText = "正在解析位置...",
+            message = "已从坐标输入回填 WGS84 坐标。"
+        )
+        reverseGeocodeMapPoint(gcj02)
+        return true
     }
 
     fun locateCurrentPosition() {

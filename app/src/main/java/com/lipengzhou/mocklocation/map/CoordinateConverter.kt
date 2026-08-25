@@ -1,14 +1,27 @@
 package com.lipengzhou.mocklocation.map
 
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
 object CoordinateConverter {
     private const val PI = 3.1415926535897932384626
+    private const val X_PI = PI * 3000.0 / 180.0
     private const val A = 6378245.0
     private const val EE = 0.00669342162296594323
+
+    fun bd09ToGcj02(latitude: Double, longitude: Double): Coordinate {
+        val x = longitude - 0.0065
+        val y = latitude - 0.006
+        val z = sqrt(x * x + y * y) - 0.00002 * sin(y * X_PI)
+        val theta = atan2(y, x) - 0.000003 * cos(x * X_PI)
+        return Coordinate(
+            latitude = z * sin(theta),
+            longitude = z * cos(theta)
+        )
+    }
 
     fun gcj02ToWgs84(latitude: Double, longitude: Double): Coordinate {
         if (isOutOfChina(latitude, longitude)) {
@@ -78,3 +91,8 @@ data class Coordinate(
     val latitude: Double,
     val longitude: Double,
 )
+
+enum class CoordinateInputSystem {
+    BD09,
+    GPS,
+}

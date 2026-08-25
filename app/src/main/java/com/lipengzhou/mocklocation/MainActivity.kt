@@ -94,6 +94,7 @@ class MainActivity : ComponentActivity() {
                     onSearchResultSelected = viewModel::selectSearchResult,
                     onSearchHistoryDelete = viewModel::deleteSearchHistory,
                     onPointSelected = viewModel::onMapPointSelected,
+                    onCoordinateInputConfirmed = viewModel::onCoordinateInputConfirmed,
                     onLocateCurrentPosition = viewModel::locateCurrentPosition,
                     onStart = viewModel::startMocking,
                     onStop = viewModel::stopMocking,
