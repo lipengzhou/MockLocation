@@ -56,6 +56,18 @@ class MockLocationPreferences(context: Context) {
             .filter { it.isNotBlank() }
             .take(MAX_SEARCH_HISTORY_ITEMS)
 
+    fun savedLocationPermissionRequested(): Boolean =
+        prefs.getBoolean(LOCATION_PERMISSION_REQUESTED_PREFS_KEY, false)
+
+    fun savedNotificationPermissionRequested(): Boolean =
+        prefs.getBoolean(NOTIFICATION_PERMISSION_REQUESTED_PREFS_KEY, false)
+
+    fun savedAgreementAccepted(): Boolean =
+        prefs.getBoolean(AGREEMENT_ACCEPTED_PREFS_KEY, false)
+
+    fun savedPermissionGuideCompleted(): Boolean =
+        prefs.getBoolean(PERMISSION_GUIDE_COMPLETED_PREFS_KEY, false)
+
     fun saveSearchHistory(history: List<String>) {
         prefs.edit()
             .putString(SEARCH_HISTORY_PREFS_KEY, history.take(MAX_SEARCH_HISTORY_ITEMS).joinToString("\n"))
@@ -74,8 +86,36 @@ class MockLocationPreferences(context: Context) {
             .apply()
     }
 
+    fun markLocationPermissionRequested() {
+        prefs.edit()
+            .putBoolean(LOCATION_PERMISSION_REQUESTED_PREFS_KEY, true)
+            .apply()
+    }
+
+    fun markNotificationPermissionRequested() {
+        prefs.edit()
+            .putBoolean(NOTIFICATION_PERMISSION_REQUESTED_PREFS_KEY, true)
+            .apply()
+    }
+
+    fun markAgreementAccepted() {
+        prefs.edit()
+            .putBoolean(AGREEMENT_ACCEPTED_PREFS_KEY, true)
+            .apply()
+    }
+
+    fun markPermissionGuideCompleted() {
+        prefs.edit()
+            .putBoolean(PERMISSION_GUIDE_COMPLETED_PREFS_KEY, true)
+            .apply()
+    }
+
     companion object {
         const val MAX_SEARCH_HISTORY_ITEMS = 8
         private const val SEARCH_HISTORY_PREFS_KEY = "search_history"
+        private const val LOCATION_PERMISSION_REQUESTED_PREFS_KEY = "location_permission_requested"
+        private const val NOTIFICATION_PERMISSION_REQUESTED_PREFS_KEY = "notification_permission_requested"
+        private const val AGREEMENT_ACCEPTED_PREFS_KEY = "agreement_accepted"
+        private const val PERMISSION_GUIDE_COMPLETED_PREFS_KEY = "permission_guide_completed"
     }
 }

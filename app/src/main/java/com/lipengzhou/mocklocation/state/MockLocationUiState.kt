@@ -6,6 +6,7 @@ import com.lipengzhou.mocklocation.map.MapSearchResult
 
 enum class AppPage {
     Map,
+    PermissionGuide,
     Configuration,
 }
 
@@ -25,13 +26,26 @@ data class MockLocationUiState(
     val selectedPage: AppPage = AppPage.Map,
     val showSearchPage: Boolean = false,
     val search: SearchUiState = SearchUiState(),
+    val hasAcceptedAgreement: Boolean = false,
+    val hasCompletedPermissionGuide: Boolean = false,
 )
 
 data class PermissionUiState(
     val hasLocationPermission: Boolean = false,
     val hasNotificationPermission: Boolean = false,
     val hasMockLocationPermission: Boolean = false,
-)
+    val isSystemLocationEnabled: Boolean = false,
+    val canDrawOverlays: Boolean = false,
+    val isIgnoringBatteryOptimizations: Boolean = false,
+    val hasRequestedLocationPermission: Boolean = false,
+    val hasRequestedNotificationPermission: Boolean = false,
+) {
+    val requiredPermissionsReady: Boolean
+        get() = hasLocationPermission &&
+            hasNotificationPermission &&
+            hasMockLocationPermission &&
+            isSystemLocationEnabled
+}
 
 data class DiagnosticUiState(
     val providerNames: String = "无",

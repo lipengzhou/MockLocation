@@ -10,6 +10,8 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
 import android.os.CancellationSignal
+import android.os.PowerManager
+import android.provider.Settings
 import android.location.provider.ProviderProperties
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.startForegroundService
@@ -60,6 +62,18 @@ class MockLocationSystemController(context: Context) {
         } else {
             true
         }
+
+    fun isSystemLocationEnabled(): Boolean {
+        val locationManager = appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        return runCatching { locationManager.isLocationEnabled }.getOrDefault(false)
+    }
+
+    fun canDrawOverlays(): Boolean = Settings.canDrawOverlays(appContext)
+
+    fun isIgnoringBatteryOptimizations(): Boolean {
+        val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+        return powerManager.isIgnoringBatteryOptimizations(appContext.packageName)
+    }
 
     fun canUseMockLocation(): Boolean {
         return runCatching {

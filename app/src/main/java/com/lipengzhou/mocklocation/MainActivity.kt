@@ -5,7 +5,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -19,6 +21,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -35,21 +40,60 @@ class MainActivity : ComponentActivity() {
         setContent {
             MockLocationTheme {
                 val context = LocalContext.current
+                val lifecycleOwner = LocalLifecycleOwner.current
                 val viewModel: MockLocationViewModel = viewModel()
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
                 val permissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestMultiplePermissions()
                 ) {
                     viewModel.onPermissionsResult()
+                    if (shouldOpenLocationPermissionSettingsAfterRequest()) {
+                        viewModel.onRuntimePermissionSettingsRequired("定位权限")
+                        context.openAppSettings()
+                    } else if (shouldOpenNotificationPermissionSettingsAfterRequest()) {
+                        viewModel.onRuntimePermissionSettingsRequired("通知权限")
+                        context.openAppSettings()
+                    }
+                }
+                val locationPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestMultiplePermissions()
+                ) {
+                    viewModel.onPermissionsResult()
+                    if (shouldOpenLocationPermissionSettingsAfterRequest()) {
+                        viewModel.onRuntimePermissionSettingsRequired("定位权限")
+                        context.openAppSettings()
+                    }
+                }
+                val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission()
+                ) {
+                    viewModel.onPermissionsResult()
+                    if (shouldOpenNotificationPermissionSettingsAfterRequest()) {
+                        viewModel.onRuntimePermissionSettingsRequired("通知权限")
+                        context.openAppSettings()
+                    }
                 }
 
                 LaunchedEffect(viewModel) {
                     viewModel.refreshRuntimeState()
                 }
 
+                DisposableEffect(lifecycleOwner, viewModel) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            viewModel.refreshRuntimeState()
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose {
+                        lifecycleOwner.lifecycle.removeObserver(observer)
+                    }
+                }
+
                 LaunchedEffect(viewModel, permissionLauncher) {
                     viewModel.startMockAction.collect { action ->
                         if (action == StartMockAction.RequestPermissions) {
+                            viewModel.onRuntimePermissionRequestStarted()
                             permissionLauncher.launch(requiredPermissions())
                         }
                     }
@@ -99,42 +143,120 @@ class MainActivity : ComponentActivity() {
                     onStart = viewModel::startMocking,
                     onStop = viewModel::stopMocking,
                     onRequestPermissions = {
+                        viewModel.onRuntimePermissionRequestStarted()
                         permissionLauncher.launch(requiredPermissions())
                     },
+                    onRequestLocationPermission = {
+                        if (shouldOpenLocationPermissionSettings(uiState.permissions.hasRequestedLocationPermission)) {
+                            viewModel.onRuntimePermissionSettingsRequired("定位权限")
+                            context.openAppSettings()
+                        } else {
+                            viewModel.onLocationPermissionRequestStarted()
+                            locationPermissionLauncher.launch(locationPermissions())
+                        }
+                    },
+                    onRequestNotificationPermission = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            if (
+                                shouldOpenNotificationPermissionSettings(
+                                    uiState.permissions.hasRequestedNotificationPermission
+                                )
+                            ) {
+                                viewModel.onRuntimePermissionSettingsRequired("通知权限")
+                                context.openAppSettings()
+                            } else {
+                                viewModel.onNotificationPermissionRequestStarted()
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        } else {
+                            viewModel.onPermissionsResult()
+                        }
+                    },
                     onOpenDeveloperSettings = {
-                        context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+                        context.openSettings(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
                     },
                     onOpenApplicationSettings = {
-                        context.startActivity(
+                        context.openSettings(
                             Intent(
                                 Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                                 Uri.fromParts("package", context.packageName, null)
                             )
                         )
                     },
+                    onOpenLocationSettings = {
+                        context.openSettings(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                    },
+                    onRefreshRuntimeState = viewModel::refreshRuntimeState,
                     onCopyDiagnostics = viewModel::copyDiagnostics,
                     onLatitudeChange = viewModel::onLatitudeChange,
                     onLongitudeChange = viewModel::onLongitudeChange,
                     onAltitudeChange = viewModel::onAltitudeChange,
                     onUpdateIntervalChange = viewModel::onUpdateIntervalChange,
-                    onWakeDurationChange = viewModel::onWakeDurationChange
+                    onWakeDurationChange = viewModel::onWakeDurationChange,
+                    onAgreementAccepted = viewModel::acceptAgreement,
+                    onPermissionGuideCompleted = viewModel::completePermissionGuide
                 )
             }
         }
     }
 }
 
+private fun Context.openSettings(intent: Intent) {
+    runCatching { startActivity(intent) }
+}
+
+private fun Context.openAppSettings() {
+    openSettings(
+        Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", packageName, null)
+        )
+    )
+}
+
+private fun Context.hasAnyPermission(permissions: Array<String>): Boolean =
+    permissions.any { permission ->
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+    }
+
+private fun Context.hasPermission(permission: String): Boolean =
+    ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+private fun MainActivity.shouldShowAnyPermissionRationale(permissions: Array<String>): Boolean =
+    permissions.any { permission -> shouldShowRequestPermissionRationale(permission) }
+
+private fun MainActivity.shouldOpenLocationPermissionSettings(hasRequestedLocationPermission: Boolean): Boolean =
+    hasRequestedLocationPermission &&
+        !hasAnyPermission(locationPermissions()) &&
+        !shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)
+
+private fun MainActivity.shouldOpenLocationPermissionSettingsAfterRequest(): Boolean =
+    !hasAnyPermission(locationPermissions()) &&
+        !shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)
+
+private fun MainActivity.shouldOpenNotificationPermissionSettings(
+    hasRequestedNotificationPermission: Boolean,
+): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        hasRequestedNotificationPermission &&
+        !hasPermission(Manifest.permission.POST_NOTIFICATIONS) &&
+        !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+
+private fun MainActivity.shouldOpenNotificationPermissionSettingsAfterRequest(): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        !hasPermission(Manifest.permission.POST_NOTIFICATIONS) &&
+        !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+
 private fun requiredPermissions(): Array<String> {
-    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-        arrayOf(
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.POST_NOTIFICATIONS
-        )
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        locationPermissions() + Manifest.permission.POST_NOTIFICATIONS
     } else {
-        arrayOf(
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        )
+        locationPermissions()
     }
 }
+
+private fun locationPermissions(): Array<String> =
+    arrayOf(
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    )

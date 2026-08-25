@@ -70,13 +70,94 @@ class MockLocationViewModel(
     }
 
     fun onPermissionsResult() {
+        val permissions = currentPermissions()
+        val missingRuntimePermissions = buildList {
+            if (!permissions.hasLocationPermission) {
+                add("定位权限")
+            }
+            if (!permissions.hasNotificationPermission) {
+                add("通知权限")
+            }
+        }
         _uiState.update { state ->
-            state.copy(permissions = currentPermissions())
+            state.copy(
+                permissions = permissions,
+                statusText = if (missingRuntimePermissions.isEmpty()) {
+                    "运行时权限已就绪。"
+                } else {
+                    "${missingRuntimePermissions.joinToString("、")}仍未授权；如果系统没有弹窗，请在应用设置中手动开启。"
+                }
+            )
+        }
+    }
+
+    fun onRuntimePermissionRequestStarted() {
+        preferences.markLocationPermissionRequested()
+        preferences.markNotificationPermissionRequested()
+        _uiState.update {
+            it.copy(statusText = "正在请求定位和通知权限...")
+        }
+    }
+
+    fun onLocationPermissionRequestStarted() {
+        preferences.markLocationPermissionRequested()
+        _uiState.update {
+            it.copy(statusText = "正在请求定位权限...")
+        }
+    }
+
+    fun onNotificationPermissionRequestStarted() {
+        preferences.markNotificationPermissionRequested()
+        _uiState.update {
+            it.copy(statusText = "正在请求通知权限...")
+        }
+    }
+
+    fun onRuntimePermissionSettingsRequired(permissionName: String) {
+        _uiState.update { state ->
+            state.copy(
+                permissions = currentPermissions(),
+                statusText = "${permissionName}仍未授权，已打开应用设置，请在权限中手动开启。"
+            )
         }
     }
 
     fun selectPage(page: AppPage) {
         _uiState.update { it.copy(selectedPage = page) }
+    }
+
+    fun acceptAgreement() {
+        preferences.markAgreementAccepted()
+        _uiState.update {
+            it.copy(
+                hasAcceptedAgreement = true,
+                selectedPage = AppPage.PermissionGuide
+            )
+        }
+    }
+
+    fun completePermissionGuide() {
+        val permissions = currentPermissions()
+        if (!permissions.requiredPermissionsReady) {
+            _uiState.update { state ->
+                state.copy(
+                    permissions = permissions,
+                    statusText = "请先完成必需权限配置。"
+                )
+            }
+            return
+        }
+
+        preferences.markPermissionGuideCompleted()
+        _uiState.update { state ->
+            state.copy(
+                hasCompletedPermissionGuide = true,
+                selectedPage = AppPage.Map,
+                permissions = permissions,
+                diagnostics = currentDiagnostics(),
+                statusText = "权限配置已完成。"
+            )
+        }
     }
 
     fun openSearchPage() {
@@ -486,7 +567,9 @@ class MockLocationViewModel(
                 latitude = latitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LATITUDE,
                 longitude = longitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LONGITUDE
             ),
-            search = SearchUiState(history = preferences.savedSearchHistory())
+            search = SearchUiState(history = preferences.savedSearchHistory()),
+            hasAcceptedAgreement = preferences.savedAgreementAccepted(),
+            hasCompletedPermissionGuide = preferences.savedPermissionGuideCompleted()
         )
     }
 
@@ -494,7 +577,12 @@ class MockLocationViewModel(
         PermissionUiState(
             hasLocationPermission = systemController.hasLocationPermission(),
             hasNotificationPermission = systemController.hasNotificationPermission(),
-            hasMockLocationPermission = systemController.canUseMockLocation()
+            hasMockLocationPermission = systemController.canUseMockLocation(),
+            isSystemLocationEnabled = systemController.isSystemLocationEnabled(),
+            canDrawOverlays = systemController.canDrawOverlays(),
+            isIgnoringBatteryOptimizations = systemController.isIgnoringBatteryOptimizations(),
+            hasRequestedLocationPermission = preferences.savedLocationPermissionRequested(),
+            hasRequestedNotificationPermission = preferences.savedNotificationPermissionRequested()
         )
 
     private fun currentDiagnostics(): DiagnosticUiState =
@@ -543,6 +631,9 @@ class MockLocationViewModel(
         appendLine("定位权限：${if (hasLocationPermission) "已就绪" else "待处理"}")
         appendLine("通知权限：${if (hasNotificationPermission) "已就绪" else "待处理"}")
         appendLine("模拟位置应用：${if (hasMockLocationPermission) "已就绪" else "待处理"}")
+        appendLine("系统定位开关：${if (systemController.isSystemLocationEnabled()) "已开启" else "未开启"}")
+        appendLine("悬浮窗权限：${if (systemController.canDrawOverlays()) "已就绪" else "待处理"}")
+        appendLine("电池优化例外：${if (systemController.isIgnoringBatteryOptimizations()) "已设置" else "未设置"}")
     }
 
     private fun MapSearchResult.displayText(): String =

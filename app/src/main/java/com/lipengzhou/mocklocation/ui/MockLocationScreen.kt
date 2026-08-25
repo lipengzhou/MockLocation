@@ -1,6 +1,8 @@
 package com.lipengzhou.mocklocation.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -25,20 +27,28 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -61,6 +71,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -68,12 +79,14 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -118,17 +131,56 @@ fun MockLocationScreen(
     onStart: () -> Unit = {},
     onStop: () -> Unit = {},
     onRequestPermissions: () -> Unit = {},
+    onRequestLocationPermission: () -> Unit = {},
+    onRequestNotificationPermission: () -> Unit = {},
     onOpenDeveloperSettings: () -> Unit = {},
     onOpenApplicationSettings: () -> Unit = {},
+    onOpenLocationSettings: () -> Unit = {},
+    onRefreshRuntimeState: () -> Unit = {},
     onCopyDiagnostics: () -> Unit = {},
     onLatitudeChange: (String) -> Unit = {},
     onLongitudeChange: (String) -> Unit = {},
     onAltitudeChange: (String) -> Unit = {},
     onUpdateIntervalChange: (Long) -> Unit = {},
     onWakeDurationChange: (Long) -> Unit = {},
+    onAgreementAccepted: () -> Unit = {},
+    onPermissionGuideCompleted: () -> Unit = {},
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val shouldShowPermissionGuideOnly =
+        !uiState.hasCompletedPermissionGuide || !uiState.permissions.requiredPermissionsReady
+
+    if (!uiState.hasAcceptedAgreement) {
+        AgreementPage(
+            modifier = modifier.fillMaxSize(),
+            onAgreementAccepted = onAgreementAccepted
+        )
+        return
+    }
+
+    if (shouldShowPermissionGuideOnly) {
+        PermissionGuidePage(
+            hasLocationPermission = uiState.permissions.hasLocationPermission,
+            hasNotificationPermission = uiState.permissions.hasNotificationPermission,
+            hasMockLocationPermission = uiState.permissions.hasMockLocationPermission,
+            isSystemLocationEnabled = uiState.permissions.isSystemLocationEnabled,
+            hasRequestedLocationPermission = uiState.permissions.hasRequestedLocationPermission,
+            hasRequestedNotificationPermission = uiState.permissions.hasRequestedNotificationPermission,
+            statusText = uiState.statusText,
+            showMenuButton = false,
+            onMenuClick = {},
+            onRequestLocationPermission = onRequestLocationPermission,
+            onRequestNotificationPermission = onRequestNotificationPermission,
+            onOpenDeveloperSettings = onOpenDeveloperSettings,
+            onOpenApplicationSettings = onOpenApplicationSettings,
+            onOpenLocationSettings = onOpenLocationSettings,
+            onRefreshRuntimeState = onRefreshRuntimeState,
+            onEnterApp = onPermissionGuideCompleted,
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
 
     ModalNavigationDrawer(
         modifier = modifier,
@@ -161,6 +213,28 @@ fun MockLocationScreen(
                 onLocateCurrentPosition = onLocateCurrentPosition,
                 onStart = onStart,
                 onStop = onStop,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            AppPage.PermissionGuide -> PermissionGuidePage(
+                hasLocationPermission = uiState.permissions.hasLocationPermission,
+                hasNotificationPermission = uiState.permissions.hasNotificationPermission,
+                hasMockLocationPermission = uiState.permissions.hasMockLocationPermission,
+                isSystemLocationEnabled = uiState.permissions.isSystemLocationEnabled,
+                hasRequestedLocationPermission = uiState.permissions.hasRequestedLocationPermission,
+                hasRequestedNotificationPermission = uiState.permissions.hasRequestedNotificationPermission,
+                statusText = uiState.statusText,
+                showMenuButton = true,
+                onMenuClick = {
+                    scope.launch { drawerState.open() }
+                },
+                onRequestLocationPermission = onRequestLocationPermission,
+                onRequestNotificationPermission = onRequestNotificationPermission,
+                onOpenDeveloperSettings = onOpenDeveloperSettings,
+                onOpenApplicationSettings = onOpenApplicationSettings,
+                onOpenLocationSettings = onOpenLocationSettings,
+                onRefreshRuntimeState = onRefreshRuntimeState,
+                onEnterApp = onPermissionGuideCompleted,
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -219,6 +293,122 @@ fun MockLocationScreen(
 }
 
 @Composable
+private fun AgreementPage(
+    onAgreementAccepted: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var hasCheckedAgreement by rememberSaveable { mutableStateOf(false) }
+
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)
+        ) {
+            Text(
+                modifier = Modifier.fillMaxWidth(),
+                text = "用户协议和隐私政策",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                modifier = Modifier.fillMaxWidth(),
+                text = "请先阅读并同意以下说明后继续使用模拟定位功能。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    AgreementParagraph(
+                        index = 1,
+                        text = "本应用用于在用户授权的 Android 开发者选项环境下注入模拟位置信息，仅供调试、测试或个人合法用途。"
+                    )
+                    AgreementParagraph(
+                        index = 2,
+                        text = "使用前需自行确认所在地法律法规、目标应用或服务的使用规则，因违反规则或不当使用造成的责任由用户自行承担。"
+                    )
+                    AgreementParagraph(
+                        index = 3,
+                        text = "本应用会请求定位、通知等必要权限；定位数据仅用于本机地图选点、当前位置获取和模拟定位注入，不会上传到开发者服务器。"
+                    )
+                    AgreementParagraph(
+                        index = 4,
+                        text = "搜索关键词、位置和运行状态等数据仅保存在本机，用于改善本地使用体验；卸载应用后相关本地数据将随系统机制清除。"
+                    )
+                    AgreementParagraph(
+                        index = 5,
+                        text = "勾选即表示已阅读并同意以上用户协议和隐私说明。"
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .toggleable(
+                        value = hasCheckedAgreement,
+                        role = Role.Checkbox,
+                        onValueChange = { hasCheckedAgreement = it }
+                    )
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = hasCheckedAgreement,
+                    onCheckedChange = null
+                )
+                Text(
+                    text = "已阅读《用户协议和隐私政策》",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            Button(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                enabled = hasCheckedAgreement,
+                onClick = onAgreementAccepted
+            ) {
+                Text("进入应用")
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgreementParagraph(
+    index: Int,
+    text: String,
+) {
+    Text(
+        modifier = Modifier.fillMaxWidth(),
+        text = "$index. $text",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center
+    )
+}
+
+@Composable
 private fun AppDrawerContent(
     selectedPage: AppPage,
     onPageSelected: (AppPage) -> Unit,
@@ -252,6 +442,17 @@ private fun AppDrawerContent(
                     )
                 },
                 label = { Text("地图选点") }
+            )
+            NavigationDrawerItem(
+                selected = selectedPage == AppPage.PermissionGuide,
+                onClick = { onPageSelected(AppPage.PermissionGuide) },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = null
+                    )
+                },
+                label = { Text("权限引导") }
             )
             NavigationDrawerItem(
                 selected = selectedPage == AppPage.Configuration,
@@ -952,6 +1153,365 @@ private fun SearchResultList(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PermissionGuidePage(
+    hasLocationPermission: Boolean,
+    hasNotificationPermission: Boolean,
+    hasMockLocationPermission: Boolean,
+    isSystemLocationEnabled: Boolean,
+    hasRequestedLocationPermission: Boolean,
+    hasRequestedNotificationPermission: Boolean,
+    statusText: String,
+    showMenuButton: Boolean,
+    onMenuClick: () -> Unit,
+    onRequestLocationPermission: () -> Unit,
+    onRequestNotificationPermission: () -> Unit,
+    onOpenDeveloperSettings: () -> Unit,
+    onOpenApplicationSettings: () -> Unit,
+    onOpenLocationSettings: () -> Unit,
+    onRefreshRuntimeState: () -> Unit,
+    onEnterApp: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var refreshRotationTarget by remember { mutableFloatStateOf(0f) }
+    val refreshRotation by animateFloatAsState(
+        targetValue = refreshRotationTarget,
+        animationSpec = tween(durationMillis = 450),
+        label = "refreshRotation"
+    )
+    val requiredSteps = listOf(
+        PermissionGuideStep(
+            title = "系统定位服务",
+            description = "开启设备定位开关，地图选点和真实定位恢复依赖这个能力。",
+            isReady = isSystemLocationEnabled,
+            actionText = if (isSystemLocationEnabled) "已开启" else "打开定位设置",
+            icon = Icons.Filled.MyLocation,
+            onAction = onOpenLocationSettings
+        ),
+        PermissionGuideStep(
+            title = "定位权限",
+            description = "允许应用读取当前位置，用于定位到当前地点和恢复真实定位。",
+            isReady = hasLocationPermission,
+            actionText = when {
+                hasLocationPermission -> "已授权"
+                hasRequestedLocationPermission -> "打开应用设置"
+                else -> "申请权限"
+            },
+            secondaryActionText = if (!hasLocationPermission && !hasRequestedLocationPermission) {
+                "打开应用设置"
+            } else {
+                null
+            },
+            icon = Icons.Filled.LocationOn,
+            onAction = if (hasRequestedLocationPermission) {
+                onOpenApplicationSettings
+            } else {
+                onRequestLocationPermission
+            },
+            onSecondaryAction = onOpenApplicationSettings
+        ),
+        PermissionGuideStep(
+            title = "通知权限",
+            description = "前台服务运行时需要显示通知，Android 13 及以上需要单独授权。",
+            isReady = hasNotificationPermission,
+            actionText = when {
+                hasNotificationPermission -> "已授权"
+                hasRequestedNotificationPermission -> "打开应用设置"
+                else -> "申请权限"
+            },
+            secondaryActionText = if (!hasNotificationPermission && !hasRequestedNotificationPermission) {
+                "打开应用设置"
+            } else {
+                null
+            },
+            icon = Icons.Filled.Notifications,
+            onAction = if (hasRequestedNotificationPermission) {
+                onOpenApplicationSettings
+            } else {
+                onRequestNotificationPermission
+            },
+            onSecondaryAction = onOpenApplicationSettings
+        ),
+        PermissionGuideStep(
+            title = "模拟位置应用",
+            description = "在开发者选项中选择本应用作为模拟位置信息应用。",
+            isReady = hasMockLocationPermission,
+            actionText = if (hasMockLocationPermission) "已设置" else "打开开发者选项",
+            icon = Icons.Filled.DeveloperMode,
+            onAction = onOpenDeveloperSettings
+        )
+    )
+    val readyRequiredCount = requiredSteps.count { it.isReady }
+    val requiredReady = readyRequiredCount == requiredSteps.size
+
+    Column(
+        modifier = modifier
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (showMenuButton) {
+                IconButton(onClick = onMenuClick) {
+                    Icon(
+                        imageVector = Icons.Filled.Menu,
+                        contentDescription = "打开菜单"
+                    )
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "权限引导",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "按顺序完成系统授权与开发者选项设置",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(
+                onClick = {
+                    refreshRotationTarget += 360f
+                    onRefreshRuntimeState()
+                }
+            ) {
+                Icon(
+                    modifier = Modifier.graphicsLayer {
+                        rotationZ = refreshRotation
+                    },
+                    imageVector = Icons.Filled.Refresh,
+                    contentDescription = "刷新权限状态"
+                )
+            }
+        }
+
+        PermissionGuideSummaryCard(
+            readyRequiredCount = readyRequiredCount,
+            requiredTotalCount = requiredSteps.size,
+            requiredReady = requiredReady,
+            statusText = statusText
+        )
+
+        PermissionGuideSection(
+            title = "必需权限",
+            steps = requiredSteps
+        )
+
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onOpenApplicationSettings
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Settings,
+                contentDescription = null
+            )
+            Text(
+                modifier = Modifier.padding(start = 8.dp),
+                text = "打开应用设置"
+            )
+        }
+
+        Button(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            enabled = requiredReady,
+            onClick = onEnterApp
+        ) {
+            Text("进入应用")
+        }
+    }
+}
+
+private data class PermissionGuideStep(
+    val title: String,
+    val description: String,
+    val isReady: Boolean,
+    val actionText: String,
+    val secondaryActionText: String? = null,
+    val icon: ImageVector,
+    val onAction: () -> Unit,
+    val onSecondaryAction: (() -> Unit)? = null,
+)
+
+@Composable
+private fun PermissionGuideSummaryCard(
+    readyRequiredCount: Int,
+    requiredTotalCount: Int,
+    requiredReady: Boolean,
+    statusText: String,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (requiredReady) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            }
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = if (requiredReady) "必需权限已就绪" else "还需完成必需权限",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "$readyRequiredCount / $requiredTotalCount 已完成",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = if (requiredReady) {
+                    "可以返回地图页开始模拟定位。"
+                } else {
+                    "建议从上到下处理，系统设置完成后返回本页刷新状态。"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionGuideSection(
+    title: String,
+    steps: List<PermissionGuideStep>,
+) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold
+    )
+    steps.forEach { step ->
+        PermissionGuideStepCard(step)
+    }
+}
+
+@Composable
+private fun PermissionGuideStepCard(step: PermissionGuideStep) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Icon(
+                    modifier = Modifier.size(24.dp),
+                    imageVector = step.icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = step.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = step.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                PermissionStateBadge(isReady = step.isReady)
+            }
+            val secondaryActionText = step.secondaryActionText
+            val secondaryAction = step.onSecondaryAction
+            if (secondaryActionText == null || secondaryAction == null) {
+                if (step.isReady) {
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = step.onAction
+                    ) {
+                        Text(step.actionText)
+                    }
+                } else {
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = step.onAction
+                    ) {
+                        Text(step.actionText)
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = step.onAction
+                    ) {
+                        Text(step.actionText)
+                    }
+                    OutlinedButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = secondaryAction
+                    ) {
+                        Text(secondaryActionText)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PermissionStateBadge(isReady: Boolean) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            modifier = Modifier.size(18.dp),
+            imageVector = if (isReady) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = if (isReady) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        )
+        Text(
+            text = if (isReady) "已就绪" else "待处理",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (isReady) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        )
     }
 }
 
