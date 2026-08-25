@@ -14,11 +14,15 @@ import com.lipengzhou.mocklocation.map.MapSearchRepository
 import com.lipengzhou.mocklocation.map.MapSearchResult
 import com.lipengzhou.mocklocation.map.formatCoordinate
 import com.lipengzhou.mocklocation.state.AppPage
+import com.lipengzhou.mocklocation.state.AppUpdateUiState
+import com.lipengzhou.mocklocation.state.AvailableAppUpdate
 import com.lipengzhou.mocklocation.state.DiagnosticUiState
 import com.lipengzhou.mocklocation.state.MockLocationUiState
 import com.lipengzhou.mocklocation.state.PermissionUiState
 import com.lipengzhou.mocklocation.state.SearchUiState
 import com.lipengzhou.mocklocation.state.StartMockAction
+import com.lipengzhou.mocklocation.update.AppUpdateRelease
+import com.lipengzhou.mocklocation.update.AppUpdateRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +39,7 @@ class MockLocationViewModel(
     private val preferences = MockLocationPreferences(application)
     private val systemController = MockLocationSystemController(application)
     private val searchRepository = MapSearchRepository(application)
+    private val updateRepository = AppUpdateRepository(application)
 
     private val _uiState = MutableStateFlow(createInitialState())
     val uiState: StateFlow<MockLocationUiState> = _uiState.asStateFlow()
@@ -44,6 +49,8 @@ class MockLocationViewModel(
 
     private var searchJob: Job? = null
     private var reverseGeocodeJob: Job? = null
+    private var updateCheckJob: Job? = null
+    private var hasCheckedUpdateThisSession = false
 
     fun refreshRuntimeState() {
         _uiState.update { state ->
@@ -156,6 +163,29 @@ class MockLocationViewModel(
                 permissions = permissions,
                 diagnostics = currentDiagnostics(),
                 statusText = "权限配置已完成。"
+            )
+        }
+    }
+
+    fun checkForUpdatesIfNeeded() {
+        if (hasCheckedUpdateThisSession) return
+        hasCheckedUpdateThisSession = true
+        checkForUpdates(showUpToDateMessage = false, respectIgnoredVersion = true)
+    }
+
+    fun checkForUpdatesManually() {
+        checkForUpdates(showUpToDateMessage = true, respectIgnoredVersion = false)
+    }
+
+    fun dismissUpdatePrompt() {
+        val release = _uiState.value.update.availableRelease ?: return
+        preferences.saveIgnoredUpdateTag(release.tagName)
+        _uiState.update { state ->
+            state.copy(
+                update = state.update.copy(
+                    availableRelease = null,
+                    message = "已暂不提示 ${release.tagName}。"
+                )
             )
         }
     }
@@ -555,6 +585,7 @@ class MockLocationViewModel(
     private fun createInitialState(): MockLocationUiState {
         val latitude = MockLocationService.DEFAULT_LATITUDE.toString()
         val longitude = MockLocationService.DEFAULT_LONGITUDE.toString()
+        val currentVersionName = updateRepository.currentVersionName().ifBlank { "未知" }
         return MockLocationUiState(
             latitude = latitude,
             longitude = longitude,
@@ -568,10 +599,93 @@ class MockLocationViewModel(
                 longitude = longitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LONGITUDE
             ),
             search = SearchUiState(history = preferences.savedSearchHistory()),
+            update = AppUpdateUiState(
+                currentVersionName = currentVersionName,
+                message = "当前版本 $currentVersionName"
+            ),
             hasAcceptedAgreement = preferences.savedAgreementAccepted(),
             hasCompletedPermissionGuide = preferences.savedPermissionGuideCompleted()
         )
     }
+
+    private fun checkForUpdates(
+        showUpToDateMessage: Boolean,
+        respectIgnoredVersion: Boolean,
+    ) {
+        updateCheckJob?.cancel()
+        updateCheckJob = viewModelScope.launch {
+            _uiState.update { state ->
+                state.copy(
+                    update = state.update.copy(
+                        isChecking = true,
+                        message = "正在检查新版本..."
+                    )
+                )
+            }
+
+            val result = runCatching { updateRepository.findLatestUpdate() }
+            _uiState.update { state ->
+                result.fold(
+                    onSuccess = { release ->
+                        when {
+                            release == null -> state.copy(
+                                update = state.update.copy(
+                                    isChecking = false,
+                                    availableRelease = null,
+                                    message = if (showUpToDateMessage) {
+                                        "已是最新版本。"
+                                    } else {
+                                        ""
+                                    }
+                                )
+                            )
+
+                            respectIgnoredVersion &&
+                                release.tagName == preferences.savedIgnoredUpdateTag() -> state.copy(
+                                update = state.update.copy(
+                                    isChecking = false,
+                                    availableRelease = null,
+                                    message = ""
+                                )
+                            )
+
+                            else -> state.copy(
+                                update = state.update.copy(
+                                    isChecking = false,
+                                    availableRelease = release.toAvailableAppUpdate(),
+                                    message = "发现新版本 ${release.tagName}。"
+                                )
+                            )
+                        }
+                    },
+                    onFailure = { throwable ->
+                        state.copy(
+                            update = state.update.copy(
+                                isChecking = false,
+                                message = if (showUpToDateMessage) {
+                                    throwable.localizedMessage?.takeIf { it.isNotBlank() }
+                                        ?: "检查更新失败。"
+                                } else {
+                                    ""
+                                }
+                            )
+                        )
+                    }
+                )
+            }
+        }
+    }
+
+    private fun AppUpdateRelease.toAvailableAppUpdate(): AvailableAppUpdate =
+        AvailableAppUpdate(
+            tagName = tagName,
+            versionName = versionName,
+            title = title,
+            downloadUrl = downloadUrl,
+            assetName = assetName,
+            assetSizeBytes = assetSizeBytes,
+            releaseNotes = releaseNotes
+        )
 
     private fun currentPermissions(): PermissionUiState =
         PermissionUiState(

@@ -101,10 +101,12 @@ import com.lipengzhou.mocklocation.map.Coordinate
 import com.lipengzhou.mocklocation.map.CoordinateInputSystem
 import com.lipengzhou.mocklocation.map.MapSearchResult
 import com.lipengzhou.mocklocation.state.AppPage
+import com.lipengzhou.mocklocation.state.AppUpdateUiState
 import com.lipengzhou.mocklocation.state.MockLocationUiState
 import com.lipengzhou.mocklocation.ui.theme.MockLocationTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 private val AppDrawerMaxWidth = 304.dp
 private const val AppDrawerScreenWidthFraction = 0.84f
@@ -145,6 +147,9 @@ fun MockLocationScreen(
     onWakeDurationChange: (Long) -> Unit = {},
     onAgreementAccepted: () -> Unit = {},
     onPermissionGuideCompleted: () -> Unit = {},
+    onCheckForUpdates: () -> Unit = {},
+    onDismissUpdatePrompt: () -> Unit = {},
+    onDownloadUpdate: (String) -> Unit = {},
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -179,6 +184,13 @@ fun MockLocationScreen(
             onEnterApp = onPermissionGuideCompleted,
             modifier = modifier.fillMaxSize()
         )
+        uiState.update.availableRelease?.let { release ->
+            AppUpdateDialog(
+                update = uiState.update,
+                onDismiss = onDismissUpdatePrompt,
+                onDownload = { onDownloadUpdate(release.downloadUrl) }
+            )
+        }
         return
     }
 
@@ -255,6 +267,7 @@ fun MockLocationScreen(
                 lastError = uiState.diagnostics.lastError,
                 hasGpsProvider = uiState.diagnostics.hasGpsProvider,
                 hasNetworkProvider = uiState.diagnostics.hasNetworkProvider,
+                update = uiState.update,
                 onMenuClick = {
                     scope.launch { drawerState.open() }
                 },
@@ -269,6 +282,8 @@ fun MockLocationScreen(
                 onOpenDeveloperSettings = onOpenDeveloperSettings,
                 onOpenApplicationSettings = onOpenApplicationSettings,
                 onCopyDiagnostics = onCopyDiagnostics,
+                onCheckForUpdates = onCheckForUpdates,
+                onDownloadUpdate = onDownloadUpdate,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -288,6 +303,14 @@ fun MockLocationScreen(
             onResultSelected = onSearchResultSelected,
             onHistoryDelete = onSearchHistoryDelete,
             modifier = Modifier.fillMaxSize()
+        )
+    }
+
+    uiState.update.availableRelease?.let { release ->
+        AppUpdateDialog(
+            update = uiState.update,
+            onDismiss = onDismissUpdatePrompt,
+            onDownload = { onDownloadUpdate(release.downloadUrl) }
         )
     }
 }
@@ -352,11 +375,11 @@ private fun AgreementPage(
                     )
                     AgreementParagraph(
                         index = 4,
-                        text = "搜索关键词、位置和运行状态等数据仅保存在本机，用于改善本地使用体验；卸载应用后相关本地数据将随系统机制清除。"
+                        text = "搜索关键词、位置和运行状态等数据仅保存在本机，用于改善本地使用体验；应用会访问 GitHub Release 元数据检查版本更新。"
                     )
                     AgreementParagraph(
                         index = 5,
-                        text = "勾选即表示已阅读并同意以上用户协议和隐私说明。"
+                        text = "卸载应用后本地数据将随系统机制清除；勾选即表示已阅读并同意以上用户协议和隐私说明。"
                     )
                 }
             }
@@ -1533,6 +1556,7 @@ private fun ConfigurationPage(
     lastError: String,
     hasGpsProvider: Boolean,
     hasNetworkProvider: Boolean,
+    update: AppUpdateUiState,
     onMenuClick: () -> Unit,
     onLatitudeChange: (String) -> Unit,
     onLongitudeChange: (String) -> Unit,
@@ -1545,6 +1569,8 @@ private fun ConfigurationPage(
     onOpenDeveloperSettings: () -> Unit,
     onOpenApplicationSettings: () -> Unit,
     onCopyDiagnostics: () -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onDownloadUpdate: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1609,6 +1635,12 @@ private fun ConfigurationPage(
             wakeDurationMs = wakeDurationMs,
             onUpdateIntervalChange = onUpdateIntervalChange,
             onWakeDurationChange = onWakeDurationChange
+        )
+
+        AppUpdateCard(
+            update = update,
+            onCheckForUpdates = onCheckForUpdates,
+            onDownloadUpdate = onDownloadUpdate
         )
 
         Button(
@@ -1772,6 +1804,143 @@ private fun SettingsCard(
             }
         }
     }
+}
+
+@Composable
+private fun AppUpdateCard(
+    update: AppUpdateUiState,
+    onCheckForUpdates: () -> Unit,
+    onDownloadUpdate: (String) -> Unit,
+) {
+    val release = update.availableRelease
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "版本更新",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "当前版本：${update.currentVersionName.ifBlank { "未知" }}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (release != null) {
+                Text(
+                    text = "发现新版本：${release.tagName}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "${release.assetName} · ${release.assetSizeBytes.toReadableFileSize()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            } else if (update.message.isNotBlank()) {
+                Text(
+                    text = update.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    enabled = !update.isChecking,
+                    onClick = onCheckForUpdates
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = null
+                    )
+                    Text(
+                        modifier = Modifier.padding(start = 8.dp),
+                        text = if (update.isChecking) "检查中" else "检查更新"
+                    )
+                }
+                if (release != null) {
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = { onDownloadUpdate(release.downloadUrl) }
+                    ) {
+                        Text("下载更新")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppUpdateDialog(
+    update: AppUpdateUiState,
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit,
+) {
+    val release = update.availableRelease ?: return
+    val notes = release.releaseNotes.ifBlank { "本版本未填写更新说明。" }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "发现新版本 ${release.tagName}",
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = release.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "${release.assetName} · ${release.assetSizeBytes.toReadableFileSize()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = notes,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDownload) {
+                Text("下载更新")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("稍后")
+            }
+        }
+    )
+}
+
+private fun Long.toReadableFileSize(): String {
+    if (this <= 0L) return "大小未知"
+    val megabytes = this / 1024.0 / 1024.0
+    return String.format(Locale.US, "%.1f MB", megabytes)
 }
 
 @Composable

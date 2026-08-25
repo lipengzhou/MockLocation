@@ -26,6 +26,7 @@ data class MockLocationUiState(
     val selectedPage: AppPage = AppPage.Map,
     val showSearchPage: Boolean = false,
     val search: SearchUiState = SearchUiState(),
+    val update: AppUpdateUiState = AppUpdateUiState(),
     val hasAcceptedAgreement: Boolean = false,
     val hasCompletedPermissionGuide: Boolean = false,
 )
@@ -64,6 +65,26 @@ data class SearchUiState(
     val isSearching: Boolean = false,
     val results: List<MapSearchResult> = emptyList(),
     val history: List<String> = emptyList(),
+)
+
+data class AppUpdateUiState(
+    val currentVersionName: String = "",
+    val isChecking: Boolean = false,
+    val availableRelease: AvailableAppUpdate? = null,
+    val message: String = "",
+) {
+    val hasAvailableUpdate: Boolean
+        get() = availableRelease != null
+}
+
+data class AvailableAppUpdate(
+    val tagName: String,
+    val versionName: String,
+    val title: String,
+    val downloadUrl: String,
+    val assetName: String,
+    val assetSizeBytes: Long,
+    val releaseNotes: String,
 )
 
 enum class StartMockAction {

@@ -68,6 +68,9 @@ class MockLocationPreferences(context: Context) {
     fun savedPermissionGuideCompleted(): Boolean =
         prefs.getBoolean(PERMISSION_GUIDE_COMPLETED_PREFS_KEY, false)
 
+    fun savedIgnoredUpdateTag(): String =
+        prefs.getString(IGNORED_UPDATE_TAG_PREFS_KEY, "").orEmpty()
+
     fun saveSearchHistory(history: List<String>) {
         prefs.edit()
             .putString(SEARCH_HISTORY_PREFS_KEY, history.take(MAX_SEARCH_HISTORY_ITEMS).joinToString("\n"))
@@ -110,6 +113,12 @@ class MockLocationPreferences(context: Context) {
             .apply()
     }
 
+    fun saveIgnoredUpdateTag(tagName: String) {
+        prefs.edit()
+            .putString(IGNORED_UPDATE_TAG_PREFS_KEY, tagName)
+            .apply()
+    }
+
     companion object {
         const val MAX_SEARCH_HISTORY_ITEMS = 8
         private const val SEARCH_HISTORY_PREFS_KEY = "search_history"
@@ -117,5 +126,6 @@ class MockLocationPreferences(context: Context) {
         private const val NOTIFICATION_PERMISSION_REQUESTED_PREFS_KEY = "notification_permission_requested"
         private const val AGREEMENT_ACCEPTED_PREFS_KEY = "agreement_accepted"
         private const val PERMISSION_GUIDE_COMPLETED_PREFS_KEY = "permission_guide_completed"
+        private const val IGNORED_UPDATE_TAG_PREFS_KEY = "ignored_update_tag"
     }
 }

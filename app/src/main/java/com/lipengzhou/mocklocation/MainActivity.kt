@@ -78,6 +78,12 @@ class MainActivity : ComponentActivity() {
                     viewModel.refreshRuntimeState()
                 }
 
+                LaunchedEffect(viewModel, uiState.hasAcceptedAgreement) {
+                    if (uiState.hasAcceptedAgreement) {
+                        viewModel.checkForUpdatesIfNeeded()
+                    }
+                }
+
                 DisposableEffect(lifecycleOwner, viewModel) {
                     val observer = LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_RESUME) {
@@ -194,7 +200,12 @@ class MainActivity : ComponentActivity() {
                     onUpdateIntervalChange = viewModel::onUpdateIntervalChange,
                     onWakeDurationChange = viewModel::onWakeDurationChange,
                     onAgreementAccepted = viewModel::acceptAgreement,
-                    onPermissionGuideCompleted = viewModel::completePermissionGuide
+                    onPermissionGuideCompleted = viewModel::completePermissionGuide,
+                    onCheckForUpdates = viewModel::checkForUpdatesManually,
+                    onDismissUpdatePrompt = viewModel::dismissUpdatePrompt,
+                    onDownloadUpdate = { downloadUrl ->
+                        context.openSettings(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)))
+                    }
                 )
             }
         }
