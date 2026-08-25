@@ -70,11 +70,18 @@ data class SearchUiState(
 data class AppUpdateUiState(
     val currentVersionName: String = "",
     val isChecking: Boolean = false,
+    val isDownloading: Boolean = false,
+    val downloadedFileName: String = "",
+    val pendingInstallFileName: String = "",
     val availableRelease: AvailableAppUpdate? = null,
+    val shouldShowPrompt: Boolean = false,
     val message: String = "",
 ) {
     val hasAvailableUpdate: Boolean
         get() = availableRelease != null
+
+    val isWaitingForInstallPermission: Boolean
+        get() = pendingInstallFileName.isNotBlank()
 }
 
 data class AvailableAppUpdate(

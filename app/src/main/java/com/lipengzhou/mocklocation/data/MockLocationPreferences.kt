@@ -48,6 +48,15 @@ class MockLocationPreferences(context: Context) {
     fun savedLastError(): String =
         prefs.getString(MockLocationService.KEY_LAST_ERROR, "无") ?: "无"
 
+    fun savedLastMockLatitude(): Double? =
+        prefs.getString(LAST_MOCK_LATITUDE_PREFS_KEY, null)?.toDoubleOrNull()
+
+    fun savedLastMockLongitude(): Double? =
+        prefs.getString(LAST_MOCK_LONGITUDE_PREFS_KEY, null)?.toDoubleOrNull()
+
+    fun savedLastMockAltitude(): Double? =
+        prefs.getString(LAST_MOCK_ALTITUDE_PREFS_KEY, null)?.toDoubleOrNull()
+
     fun savedSearchHistory(): List<String> =
         prefs.getString(SEARCH_HISTORY_PREFS_KEY, "")
             .orEmpty()
@@ -89,6 +98,18 @@ class MockLocationPreferences(context: Context) {
             .apply()
     }
 
+    fun saveLastMockLocation(
+        latitude: Double,
+        longitude: Double,
+        altitude: Double,
+    ) {
+        prefs.edit()
+            .putString(LAST_MOCK_LATITUDE_PREFS_KEY, latitude.toString())
+            .putString(LAST_MOCK_LONGITUDE_PREFS_KEY, longitude.toString())
+            .putString(LAST_MOCK_ALTITUDE_PREFS_KEY, altitude.toString())
+            .apply()
+    }
+
     fun markLocationPermissionRequested() {
         prefs.edit()
             .putBoolean(LOCATION_PERMISSION_REQUESTED_PREFS_KEY, true)
@@ -127,5 +148,8 @@ class MockLocationPreferences(context: Context) {
         private const val AGREEMENT_ACCEPTED_PREFS_KEY = "agreement_accepted"
         private const val PERMISSION_GUIDE_COMPLETED_PREFS_KEY = "permission_guide_completed"
         private const val IGNORED_UPDATE_TAG_PREFS_KEY = "ignored_update_tag"
+        private const val LAST_MOCK_LATITUDE_PREFS_KEY = "last_mock_latitude"
+        private const val LAST_MOCK_LONGITUDE_PREFS_KEY = "last_mock_longitude"
+        private const val LAST_MOCK_ALTITUDE_PREFS_KEY = "last_mock_altitude"
     }
 }

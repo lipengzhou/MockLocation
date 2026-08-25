@@ -1,6 +1,7 @@
 package com.lipengzhou.mocklocation
 
 import android.Manifest
+import android.app.DownloadManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -19,6 +20,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
@@ -29,6 +33,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lipengzhou.mocklocation.location.MockLocationService
 import com.lipengzhou.mocklocation.state.StartMockAction
+import com.lipengzhou.mocklocation.update.AppUpdateDownload
+import com.lipengzhou.mocklocation.update.AppUpdateDownloadController
+import com.lipengzhou.mocklocation.update.AppUpdateDownloadStatus
 import com.lipengzhou.mocklocation.ui.MockLocationScreen
 import com.lipengzhou.mocklocation.ui.theme.MockLocationTheme
 import com.lipengzhou.mocklocation.viewmodel.MockLocationViewModel
@@ -43,6 +50,13 @@ class MainActivity : ComponentActivity() {
                 val lifecycleOwner = LocalLifecycleOwner.current
                 val viewModel: MockLocationViewModel = viewModel()
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+                val updateDownloadController = remember(context) {
+                    AppUpdateDownloadController(context)
+                }
+                val activeUpdateDownload = remember {
+                    mutableStateOf<AppUpdateDownload?>(null)
+                }
+                val currentUiState by rememberUpdatedState(uiState)
                 val permissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestMultiplePermissions()
                 ) {
@@ -88,6 +102,17 @@ class MainActivity : ComponentActivity() {
                     val observer = LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_RESUME) {
                             viewModel.refreshRuntimeState()
+                            val pendingInstallFileName = currentUiState.update.pendingInstallFileName
+                            if (
+                                pendingInstallFileName.isNotBlank() &&
+                                updateDownloadController.canRequestPackageInstalls()
+                            ) {
+                                openDownloadedUpdate(
+                                    updateDownloadController = updateDownloadController,
+                                    fileName = pendingInstallFileName,
+                                    viewModel = viewModel
+                                )
+                            }
                         }
                     }
                     lifecycleOwner.lifecycle.addObserver(observer)
@@ -129,6 +154,48 @@ class MainActivity : ComponentActivity() {
                     )
                     onDispose {
                         context.unregisterReceiver(receiver)
+                    }
+                }
+
+                DisposableEffect(context, viewModel, updateDownloadController) {
+                    val receiver = object : BroadcastReceiver() {
+                        override fun onReceive(receiverContext: Context, intent: Intent) {
+                            if (intent.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
+                            val download = activeUpdateDownload.value ?: return
+                            val completedId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+                            if (completedId != download.id) return
+
+                            val status = updateDownloadController.status(download.id, download.fileName)
+                            viewModel.onUpdateDownloadStatus(status)
+                            if (status is AppUpdateDownloadStatus.Completed) {
+                                activeUpdateDownload.value = null
+                                openDownloadedUpdate(
+                                    updateDownloadController = updateDownloadController,
+                                    fileName = status.fileName,
+                                    viewModel = viewModel
+                                )
+                            }
+                        }
+                    }
+                    ContextCompat.registerReceiver(
+                        context,
+                        receiver,
+                        IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+                        ContextCompat.RECEIVER_EXPORTED
+                    )
+                    onDispose {
+                        context.unregisterReceiver(receiver)
+                    }
+                }
+
+                LaunchedEffect(uiState.update.pendingInstallFileName) {
+                    val fileName = uiState.update.pendingInstallFileName
+                    if (fileName.isNotBlank() && updateDownloadController.canRequestPackageInstalls()) {
+                        openDownloadedUpdate(
+                            updateDownloadController = updateDownloadController,
+                            fileName = fileName,
+                            viewModel = viewModel
+                        )
                     }
                 }
 
@@ -203,12 +270,57 @@ class MainActivity : ComponentActivity() {
                     onPermissionGuideCompleted = viewModel::completePermissionGuide,
                     onCheckForUpdates = viewModel::checkForUpdatesManually,
                     onDismissUpdatePrompt = viewModel::dismissUpdatePrompt,
-                    onDownloadUpdate = { downloadUrl ->
-                        context.openSettings(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)))
+                    onDownloadUpdate = {
+                        val downloadedFileName = uiState.update.downloadedFileName
+                        if (downloadedFileName.isNotBlank()) {
+                            openDownloadedUpdate(
+                                updateDownloadController = updateDownloadController,
+                                fileName = downloadedFileName,
+                                viewModel = viewModel
+                            )
+                            return@MockLocationScreen
+                        }
+
+                        val release = viewModel.currentUpdateRelease()
+                        if (release == null) {
+                            viewModel.onUpdateDownloadStartFailed("未找到可下载版本。")
+                        } else {
+                            runCatching {
+                                updateDownloadController.enqueue(release)
+                            }.onSuccess { download ->
+                                activeUpdateDownload.value = download
+                                viewModel.onUpdateDownloadStarted(download)
+                            }.onFailure { throwable ->
+                                viewModel.onUpdateDownloadStartFailed(
+                                    throwable.localizedMessage?.takeIf { it.isNotBlank() }
+                                        ?: "无法开始下载更新。"
+                                )
+                            }
+                        }
                     }
                 )
             }
         }
+    }
+}
+
+private fun openDownloadedUpdate(
+    updateDownloadController: AppUpdateDownloadController,
+    fileName: String,
+    viewModel: MockLocationViewModel,
+) {
+    if (!updateDownloadController.canRequestPackageInstalls()) {
+        viewModel.onUpdateInstallPermissionRequired(fileName)
+        if (!updateDownloadController.openInstallPermissionSettings()) {
+            viewModel.onUpdateInstallerOpenFailed()
+        }
+        return
+    }
+
+    if (updateDownloadController.openInstaller(fileName)) {
+        viewModel.onUpdateInstallerOpened(fileName)
+    } else {
+        viewModel.onUpdateInstallerOpenFailed()
     }
 }
 

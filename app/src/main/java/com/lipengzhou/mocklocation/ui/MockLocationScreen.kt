@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DeveloperMode
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MyLocation
@@ -149,10 +150,11 @@ fun MockLocationScreen(
     onPermissionGuideCompleted: () -> Unit = {},
     onCheckForUpdates: () -> Unit = {},
     onDismissUpdatePrompt: () -> Unit = {},
-    onDownloadUpdate: (String) -> Unit = {},
+    onDownloadUpdate: () -> Unit = {},
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    var showAboutDialog by rememberSaveable { mutableStateOf(false) }
     val shouldShowPermissionGuideOnly =
         !uiState.hasCompletedPermissionGuide || !uiState.permissions.requiredPermissionsReady
 
@@ -184,11 +186,11 @@ fun MockLocationScreen(
             onEnterApp = onPermissionGuideCompleted,
             modifier = modifier.fillMaxSize()
         )
-        uiState.update.availableRelease?.let { release ->
+        uiState.update.availableRelease?.takeIf { uiState.update.shouldShowPrompt }?.let {
             AppUpdateDialog(
                 update = uiState.update,
                 onDismiss = onDismissUpdatePrompt,
-                onDownload = { onDownloadUpdate(release.downloadUrl) }
+                onDownload = onDownloadUpdate
             )
         }
         return
@@ -204,14 +206,18 @@ fun MockLocationScreen(
                 onPageSelected = { page ->
                     onPageSelected(page)
                     scope.launch { drawerState.close() }
+                },
+                onAboutClick = {
+                    showAboutDialog = true
+                    scope.launch { drawerState.close() }
                 }
             )
         }
     ) {
         when (uiState.selectedPage) {
             AppPage.Map -> MapHomePage(
-                latitude = uiState.latitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LATITUDE,
-                longitude = uiState.longitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LONGITUDE,
+                latitude = uiState.selectedCoordinate.latitude,
+                longitude = uiState.selectedCoordinate.longitude,
                 selectedCoordinate = uiState.selectedCoordinate,
                 selectedMapText = uiState.selectedMapText,
                 statusText = uiState.statusText,
@@ -267,7 +273,6 @@ fun MockLocationScreen(
                 lastError = uiState.diagnostics.lastError,
                 hasGpsProvider = uiState.diagnostics.hasGpsProvider,
                 hasNetworkProvider = uiState.diagnostics.hasNetworkProvider,
-                update = uiState.update,
                 onMenuClick = {
                     scope.launch { drawerState.open() }
                 },
@@ -282,8 +287,6 @@ fun MockLocationScreen(
                 onOpenDeveloperSettings = onOpenDeveloperSettings,
                 onOpenApplicationSettings = onOpenApplicationSettings,
                 onCopyDiagnostics = onCopyDiagnostics,
-                onCheckForUpdates = onCheckForUpdates,
-                onDownloadUpdate = onDownloadUpdate,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -306,11 +309,20 @@ fun MockLocationScreen(
         )
     }
 
-    uiState.update.availableRelease?.let { release ->
+    if (showAboutDialog) {
+        AboutDialog(
+            update = uiState.update,
+            onDismiss = { showAboutDialog = false },
+            onCheckForUpdates = onCheckForUpdates,
+            onDownloadUpdate = onDownloadUpdate
+        )
+    }
+
+    uiState.update.availableRelease?.takeIf { uiState.update.shouldShowPrompt }?.let {
         AppUpdateDialog(
             update = uiState.update,
             onDismiss = onDismissUpdatePrompt,
-            onDownload = { onDownloadUpdate(release.downloadUrl) }
+            onDownload = onDownloadUpdate
         )
     }
 }
@@ -435,6 +447,7 @@ private fun AgreementParagraph(
 private fun AppDrawerContent(
     selectedPage: AppPage,
     onPageSelected: (AppPage) -> Unit,
+    onAboutClick: () -> Unit,
 ) {
     val configuration = LocalConfiguration.current
     val drawerWidth = (configuration.screenWidthDp.dp * AppDrawerScreenWidthFraction)
@@ -487,6 +500,18 @@ private fun AppDrawerContent(
                     )
                 },
                 label = { Text("配置与诊断") }
+            )
+            HorizontalDivider()
+            NavigationDrawerItem(
+                selected = false,
+                onClick = onAboutClick,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Filled.Info,
+                        contentDescription = null
+                    )
+                },
+                label = { Text("关于") }
             )
         }
     }
@@ -1556,7 +1581,6 @@ private fun ConfigurationPage(
     lastError: String,
     hasGpsProvider: Boolean,
     hasNetworkProvider: Boolean,
-    update: AppUpdateUiState,
     onMenuClick: () -> Unit,
     onLatitudeChange: (String) -> Unit,
     onLongitudeChange: (String) -> Unit,
@@ -1569,8 +1593,6 @@ private fun ConfigurationPage(
     onOpenDeveloperSettings: () -> Unit,
     onOpenApplicationSettings: () -> Unit,
     onCopyDiagnostics: () -> Unit,
-    onCheckForUpdates: () -> Unit,
-    onDownloadUpdate: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1635,12 +1657,6 @@ private fun ConfigurationPage(
             wakeDurationMs = wakeDurationMs,
             onUpdateIntervalChange = onUpdateIntervalChange,
             onWakeDurationChange = onWakeDurationChange
-        )
-
-        AppUpdateCard(
-            update = update,
-            onCheckForUpdates = onCheckForUpdates,
-            onDownloadUpdate = onDownloadUpdate
         )
 
         Button(
@@ -1810,7 +1826,7 @@ private fun SettingsCard(
 private fun AppUpdateCard(
     update: AppUpdateUiState,
     onCheckForUpdates: () -> Unit,
-    onDownloadUpdate: (String) -> Unit,
+    onDownloadUpdate: () -> Unit,
 ) {
     val release = update.availableRelease
 
@@ -1847,11 +1863,23 @@ private fun AppUpdateCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-            } else if (update.message.isNotBlank()) {
+            } else if (
+                update.message.isNotBlank() &&
+                !update.isDownloading &&
+                !update.isWaitingForInstallPermission &&
+                update.downloadedFileName.isBlank()
+            ) {
                 Text(
                     text = update.message,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (update.isDownloading || update.isWaitingForInstallPermission || update.downloadedFileName.isNotBlank()) {
+                Text(
+                    text = update.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
             Row(
@@ -1860,7 +1888,7 @@ private fun AppUpdateCard(
             ) {
                 OutlinedButton(
                     modifier = Modifier.weight(1f),
-                    enabled = !update.isChecking,
+                    enabled = !update.isChecking && !update.isDownloading,
                     onClick = onCheckForUpdates
                 ) {
                     Icon(
@@ -1875,14 +1903,59 @@ private fun AppUpdateCard(
                 if (release != null) {
                     Button(
                         modifier = Modifier.weight(1f),
-                        onClick = { onDownloadUpdate(release.downloadUrl) }
+                        enabled = !update.isDownloading,
+                        onClick = onDownloadUpdate
                     ) {
-                        Text("下载更新")
+                        Text(if (update.downloadedFileName.isBlank()) "后台下载" else "安装更新")
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun AboutDialog(
+    update: AppUpdateUiState,
+    onDismiss: () -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onDownloadUpdate: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "关于",
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "模拟定位",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "包名：com.lipengzhou.mocklocation",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                AppUpdateCard(
+                    update = update,
+                    onCheckForUpdates = onCheckForUpdates,
+                    onDownloadUpdate = onDownloadUpdate
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
 }
 
 @Composable
@@ -1926,7 +1999,7 @@ private fun AppUpdateDialog(
         },
         confirmButton = {
             Button(onClick = onDownload) {
-                Text("下载更新")
+                Text("后台下载")
             }
         },
         dismissButton = {

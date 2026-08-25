@@ -21,6 +21,8 @@ import com.lipengzhou.mocklocation.state.MockLocationUiState
 import com.lipengzhou.mocklocation.state.PermissionUiState
 import com.lipengzhou.mocklocation.state.SearchUiState
 import com.lipengzhou.mocklocation.state.StartMockAction
+import com.lipengzhou.mocklocation.update.AppUpdateDownload
+import com.lipengzhou.mocklocation.update.AppUpdateDownloadStatus
 import com.lipengzhou.mocklocation.update.AppUpdateRelease
 import com.lipengzhou.mocklocation.update.AppUpdateRepository
 import kotlinx.coroutines.Job
@@ -170,11 +172,19 @@ class MockLocationViewModel(
     fun checkForUpdatesIfNeeded() {
         if (hasCheckedUpdateThisSession) return
         hasCheckedUpdateThisSession = true
-        checkForUpdates(showUpToDateMessage = false, respectIgnoredVersion = true)
+        checkForUpdates(
+            showUpToDateMessage = false,
+            respectIgnoredVersion = true,
+            showUpdatePrompt = true
+        )
     }
 
     fun checkForUpdatesManually() {
-        checkForUpdates(showUpToDateMessage = true, respectIgnoredVersion = false)
+        checkForUpdates(
+            showUpToDateMessage = true,
+            respectIgnoredVersion = false,
+            showUpdatePrompt = false
+        )
     }
 
     fun dismissUpdatePrompt() {
@@ -185,6 +195,94 @@ class MockLocationViewModel(
                 update = state.update.copy(
                     availableRelease = null,
                     message = "已暂不提示 ${release.tagName}。"
+                )
+            )
+        }
+    }
+
+    fun currentUpdateRelease(): AvailableAppUpdate? =
+        _uiState.value.update.availableRelease
+
+    fun onUpdateDownloadStarted(download: AppUpdateDownload) {
+        _uiState.update { state ->
+            state.copy(
+                update = state.update.copy(
+                    isDownloading = true,
+                    shouldShowPrompt = false,
+                    downloadedFileName = download.fileName,
+                    pendingInstallFileName = "",
+                    message = "正在后台下载 ${download.fileName}..."
+                )
+            )
+        }
+    }
+
+    fun onUpdateDownloadStartFailed(message: String) {
+        _uiState.update { state ->
+            state.copy(
+                update = state.update.copy(
+                    isDownloading = false,
+                    shouldShowPrompt = false,
+                    message = message
+                )
+            )
+        }
+    }
+
+    fun onUpdateDownloadStatus(status: AppUpdateDownloadStatus) {
+        _uiState.update { state ->
+            when (status) {
+                is AppUpdateDownloadStatus.Completed -> state.copy(
+                    update = state.update.copy(
+                        isDownloading = false,
+                        downloadedFileName = status.fileName,
+                        shouldShowPrompt = false,
+                        message = "下载完成，正在准备安装..."
+                    )
+                )
+
+                is AppUpdateDownloadStatus.Failed -> state.copy(
+                    update = state.update.copy(
+                        isDownloading = false,
+                        shouldShowPrompt = false,
+                        message = status.message
+                    )
+                )
+
+                AppUpdateDownloadStatus.InProgress -> state
+            }
+        }
+    }
+
+    fun onUpdateInstallPermissionRequired(fileName: String) {
+        _uiState.update { state ->
+            state.copy(
+                update = state.update.copy(
+                    pendingInstallFileName = fileName,
+                    message = "请允许本应用安装未知来源应用，返回后会继续打开安装界面。"
+                )
+            )
+        }
+    }
+
+    fun onUpdateInstallerOpened(fileName: String) {
+        _uiState.update { state ->
+            state.copy(
+                update = state.update.copy(
+                    pendingInstallFileName = "",
+                    downloadedFileName = fileName,
+                    message = "请在系统安装界面确认更新。"
+                )
+            )
+        }
+    }
+
+    fun onUpdateInstallerOpenFailed() {
+        _uiState.update { state ->
+            state.copy(
+                update = state.update.copy(
+                    pendingInstallFileName = "",
+                    message = "无法打开安装界面，请从下载通知或文件管理器手动安装。"
                 )
             )
         }
@@ -501,6 +599,7 @@ class MockLocationViewModel(
             }
 
             else -> {
+                preferences.saveLastMockLocation(lat, lon, alt)
                 _uiState.update {
                     it.copy(
                         statusText = "正在启动模拟定位...",
@@ -583,20 +682,33 @@ class MockLocationViewModel(
     }
 
     private fun createInitialState(): MockLocationUiState {
-        val latitude = MockLocationService.DEFAULT_LATITUDE.toString()
-        val longitude = MockLocationService.DEFAULT_LONGITUDE.toString()
+        val initialLatitude = preferences.savedLastMockLatitude() ?: MockLocationService.DEFAULT_LATITUDE
+        val initialLongitude = preferences.savedLastMockLongitude() ?: MockLocationService.DEFAULT_LONGITUDE
+        val initialAltitude = preferences.savedLastMockAltitude() ?: MockLocationService.DEFAULT_ALTITUDE
+        val hasSavedLastMockLocation =
+            preferences.savedLastMockLatitude() != null &&
+                preferences.savedLastMockLongitude() != null
+        val selectedCoordinate = CoordinateConverter.wgs84ToGcj02(
+            latitude = initialLatitude,
+            longitude = initialLongitude
+        )
         val currentVersionName = updateRepository.currentVersionName().ifBlank { "未知" }
         return MockLocationUiState(
-            latitude = latitude,
-            longitude = longitude,
-            altitude = MockLocationService.DEFAULT_ALTITUDE.toString(),
+            latitude = formatCoordinate(initialLatitude),
+            longitude = formatCoordinate(initialLongitude),
+            altitude = initialAltitude.toString(),
             statusText = preferences.savedStatusMessage(),
             isRunning = preferences.savedServiceRunningState(),
             permissions = currentPermissions(),
             diagnostics = currentDiagnostics(),
+            selectedMapText = if (hasSavedLastMockLocation) {
+                "最后一次模拟位置"
+            } else {
+                "尚未选择位置"
+            },
             selectedCoordinate = Coordinate(
-                latitude = latitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LATITUDE,
-                longitude = longitude.toDoubleOrNull() ?: MockLocationService.DEFAULT_LONGITUDE
+                latitude = selectedCoordinate.latitude,
+                longitude = selectedCoordinate.longitude
             ),
             search = SearchUiState(history = preferences.savedSearchHistory()),
             update = AppUpdateUiState(
@@ -611,6 +723,7 @@ class MockLocationViewModel(
     private fun checkForUpdates(
         showUpToDateMessage: Boolean,
         respectIgnoredVersion: Boolean,
+        showUpdatePrompt: Boolean,
     ) {
         updateCheckJob?.cancel()
         updateCheckJob = viewModelScope.launch {
@@ -632,6 +745,7 @@ class MockLocationViewModel(
                                 update = state.update.copy(
                                     isChecking = false,
                                     availableRelease = null,
+                                    shouldShowPrompt = false,
                                     message = if (showUpToDateMessage) {
                                         "已是最新版本。"
                                     } else {
@@ -645,6 +759,7 @@ class MockLocationViewModel(
                                 update = state.update.copy(
                                     isChecking = false,
                                     availableRelease = null,
+                                    shouldShowPrompt = false,
                                     message = ""
                                 )
                             )
@@ -653,6 +768,7 @@ class MockLocationViewModel(
                                 update = state.update.copy(
                                     isChecking = false,
                                     availableRelease = release.toAvailableAppUpdate(),
+                                    shouldShowPrompt = showUpdatePrompt,
                                     message = "发现新版本 ${release.tagName}。"
                                 )
                             )
