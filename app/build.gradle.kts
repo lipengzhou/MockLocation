@@ -33,7 +33,15 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            manifestPlaceholders["AMAP_API_KEY"] = localProperties.getProperty(
+                "AMAP_API_KEY_DEBUG",
+                localProperties.getProperty("AMAP_API_KEY", "")
+            )
+        }
         release {
+            manifestPlaceholders["AMAP_API_KEY"] = localProperties.getProperty("AMAP_API_KEY", "")
             optimization {
                 enable = true
             }

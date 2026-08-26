@@ -11,12 +11,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -24,7 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -171,28 +174,89 @@ private fun MapZoomControls(
             )
         }
         Spacer(modifier = Modifier.height(10.dp))
-        Column {
-            MapControlButton(
-                contentDescription = "放大地图",
-                onClick = onZoomIn
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = null,
-                    modifier = Modifier.size(MapControlIconSize)
-                )
+        MapZoomControlGroup(
+            onZoomIn = onZoomIn,
+            onZoomOut = onZoomOut
+        )
+    }
+}
+
+@Composable
+private fun MapZoomControlGroup(
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.size(
+            width = MapControlButtonSize,
+            height = MapControlButtonSize + MapControlButtonSize
+        ),
+        shape = MapControlButtonShape,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = 4.dp,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(MapControlButtonShape)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                MapZoomControlButton(
+                    contentDescription = "放大地图",
+                    shape = MapZoomInButtonShape,
+                    onClick = onZoomIn
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(MapControlIconSize)
+                    )
+                }
+                MapZoomControlButton(
+                    contentDescription = "缩小地图",
+                    shape = MapZoomOutButtonShape,
+                    onClick = onZoomOut
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Remove,
+                        contentDescription = null,
+                        modifier = Modifier.size(MapControlIconSize)
+                    )
+                }
             }
-            MapControlButton(
-                contentDescription = "缩小地图",
-                onClick = onZoomOut
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Remove,
-                    contentDescription = null,
-                    modifier = Modifier.size(MapControlIconSize)
-                )
-            }
+            HorizontalDivider(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 10.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
         }
+    }
+}
+
+@Composable
+private fun MapZoomControlButton(
+    contentDescription: String,
+    shape: RoundedCornerShape,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(MapControlButtonSize)
+            .clip(shape)
+            .clickable(
+                role = Role.Button,
+                onClick = onClick
+            )
+            .semantics {
+                this.contentDescription = contentDescription
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        content()
     }
 }
 
@@ -205,15 +269,19 @@ private fun MapControlButton(
     Surface(
         modifier = Modifier
             .size(MapControlButtonSize)
+            .clip(MapControlButtonShape)
+            .clickable(
+                role = Role.Button,
+                onClick = onClick
+            )
             .semantics {
                 this.contentDescription = contentDescription
-                role = Role.Button
-            }
-            .clickable(onClick = onClick),
-        color = Color.White.copy(alpha = 0.96f),
-        contentColor = Color(0xFF30343B),
-        border = BorderStroke(1.dp, Color(0xFFD7DCE3)),
-        shadowElevation = 2.dp,
+            },
+        shape = MapControlButtonShape,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = 4.dp,
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -224,5 +292,8 @@ private fun MapControlButton(
     }
 }
 
-private val MapControlButtonSize = 40.dp
-private val MapControlIconSize = 22.dp
+private val MapControlButtonSize = 44.dp
+private val MapControlIconSize = 20.dp
+private val MapControlButtonShape = RoundedCornerShape(12.dp)
+private val MapZoomInButtonShape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+private val MapZoomOutButtonShape = RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)

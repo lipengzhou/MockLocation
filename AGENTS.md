@@ -11,13 +11,20 @@
 - 最低系统版本：`minSdk=31`，即 Android 12+
 - 构建产物路径：`build/release/MockLocation-1.4-release.apk`
 
+### 开发版与正式版并存
+
+Debug 构建固定使用独立包名 `com.lipengzhou.mocklocation.debug`，桌面显示名为 `模拟位置-debug`。Release 构建继续使用正式包名 `com.lipengzhou.mocklocation`，桌面显示名为 `模拟位置`。因此真机可以同时安装开发版和正式版，日常 Android Studio 运行或 `./gradlew :app:assembleDebug` 都会生成开发调试版，不会覆盖正式版。
+
+Android 系统同一时间只能选择一个“模拟位置信息应用”。如果要切换开发版和正式版测试模拟定位，需要在开发者选项里重新选择对应应用。
+
 ### Release 签名
 
-Release 签名所需的 keystore、签名配置、build-tools 版本和输出文件名都通过 `local.properties` 配置。示例配置如下：
+Release 签名所需的 keystore、签名配置、build-tools 版本和输出文件名都通过 `local.properties` 配置。高德正式版 Key 使用 `AMAP_API_KEY`，开发版如需独立高德 Key 可配置 `AMAP_API_KEY_DEBUG`；不配置时 debug 会回退使用 `AMAP_API_KEY`。示例配置如下：
 
 ```properties
 sdk.dir=/path/to/Android/sdk
 AMAP_API_KEY=your_amap_android_key
+AMAP_API_KEY_DEBUG=your_amap_android_debug_key
 
 # Release APK signing config. Keep real files and passwords out of git.
 release.keystoreFile=/path/to/mocklocation-release.jks

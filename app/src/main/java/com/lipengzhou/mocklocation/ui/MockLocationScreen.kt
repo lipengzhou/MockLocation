@@ -23,19 +23,23 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DeveloperMode
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Menu
@@ -51,17 +55,20 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -78,6 +85,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.RectangleShape
@@ -88,6 +96,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -101,6 +111,7 @@ import com.lipengzhou.mocklocation.map.AMapPicker
 import com.lipengzhou.mocklocation.map.Coordinate
 import com.lipengzhou.mocklocation.map.CoordinateInputSystem
 import com.lipengzhou.mocklocation.map.MapSearchResult
+import com.lipengzhou.mocklocation.map.formatCoordinate
 import com.lipengzhou.mocklocation.state.AppPage
 import com.lipengzhou.mocklocation.state.AppUpdateUiState
 import com.lipengzhou.mocklocation.state.MockLocationUiState
@@ -452,10 +463,20 @@ private fun AppDrawerContent(
     val configuration = LocalConfiguration.current
     val drawerWidth = (configuration.screenWidthDp.dp * AppDrawerScreenWidthFraction)
         .coerceAtMost(AppDrawerMaxWidth)
+    val drawerItemColors = NavigationDrawerItemDefaults.colors(
+        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 
     ModalDrawerSheet(
         modifier = Modifier.width(drawerWidth),
-        drawerShape = RectangleShape
+        drawerShape = RectangleShape,
+        drawerContainerColor = MaterialTheme.colorScheme.surface,
+        drawerContentColor = MaterialTheme.colorScheme.onSurface,
+        drawerTonalElevation = 0.dp
     ) {
         Column(
             modifier = Modifier
@@ -466,7 +487,8 @@ private fun AppDrawerContent(
             Text(
                 text = "模拟定位",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
             )
             NavigationDrawerItem(
                 selected = selectedPage == AppPage.Map,
@@ -477,7 +499,8 @@ private fun AppDrawerContent(
                         contentDescription = null
                     )
                 },
-                label = { Text("地图选点") }
+                label = { Text("地图选点") },
+                colors = drawerItemColors
             )
             NavigationDrawerItem(
                 selected = selectedPage == AppPage.PermissionGuide,
@@ -488,7 +511,8 @@ private fun AppDrawerContent(
                         contentDescription = null
                     )
                 },
-                label = { Text("权限引导") }
+                label = { Text("权限引导") },
+                colors = drawerItemColors
             )
             NavigationDrawerItem(
                 selected = selectedPage == AppPage.Configuration,
@@ -499,9 +523,10 @@ private fun AppDrawerContent(
                         contentDescription = null
                     )
                 },
-                label = { Text("配置与诊断") }
+                label = { Text("配置与诊断") },
+                colors = drawerItemColors
             )
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             NavigationDrawerItem(
                 selected = false,
                 onClick = onAboutClick,
@@ -511,7 +536,8 @@ private fun AppDrawerContent(
                         contentDescription = null
                     )
                 },
-                label = { Text("关于") }
+                label = { Text("关于") },
+                colors = drawerItemColors
             )
         }
     }
@@ -546,69 +572,82 @@ private fun MapHomePage(
             initialLatitude = latitude,
             initialLongitude = longitude,
             selectedCoordinate = selectedCoordinate,
-            zoomControlsBottomPadding = 188.dp,
+            zoomControlsBottomPadding = 272.dp,
             onCoordinateInputClick = { showCoordinateInputDialog = true },
             onLocateCurrentPosition = onLocateCurrentPosition,
             onPointSelected = onPointSelected
         )
 
-        Card(
+        ElevatedCard(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
                 .fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
-            )
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 4.dp, top = 8.dp, end = 12.dp, bottom = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(start = 4.dp, top = 8.dp, end = 10.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                IconButton(onClick = onMenuClick) {
+                    Icon(
+                        imageVector = Icons.Filled.Menu,
+                        contentDescription = "打开菜单"
+                    )
+                }
+                Surface(
+                    onClick = onSearchClick,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .semantics { contentDescription = "搜索地点" },
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ) {
-                    IconButton(onClick = onMenuClick) {
-                        Icon(
-                            imageVector = Icons.Filled.Menu,
-                            contentDescription = "打开菜单"
-                        )
-                    }
-                    OutlinedButton(
-                        modifier = Modifier.weight(1f),
-                        onClick = onSearchClick
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Search,
                             contentDescription = null
                         )
                         Text(
-                            modifier = Modifier.padding(start = 8.dp),
-                            text = "搜索地点"
+                            text = "搜索地点或地址",
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             }
         }
 
-        Card(
+        ElevatedCard(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 12.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp)
                 .fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
-            )
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
             Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -629,16 +668,9 @@ private fun MapHomePage(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Text(
-                        text = if (isRunning) "运行中" else "已停止",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (isRunning) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
+                    RunningStatePill(isRunning = isRunning)
                 }
+                CoordinateSummary(selectedCoordinate = selectedCoordinate)
                 Text(
                     text = statusText,
                     style = MaterialTheme.typography.bodySmall,
@@ -655,10 +687,11 @@ private fun MapHomePage(
                         enabled = !isRunning,
                         onClick = onStart
                     ) {
-                        Text("开始")
+                        Text("开始模拟")
                     }
                     OutlinedButton(
                         modifier = Modifier.weight(1f),
+                        enabled = isRunning,
                         onClick = onStop
                     ) {
                         Text("停止")
@@ -682,6 +715,91 @@ private fun MapHomePage(
                 }
                 accepted
             }
+        )
+    }
+}
+
+@Composable
+private fun RunningStatePill(isRunning: Boolean) {
+    val containerColor = if (isRunning) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val contentColor = if (isRunning) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = containerColor,
+        contentColor = contentColor
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                modifier = Modifier.size(10.dp),
+                imageVector = Icons.Filled.FiberManualRecord,
+                contentDescription = null
+            )
+            Text(
+                text = if (isRunning) "运行中" else "已停止",
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun CoordinateSummary(selectedCoordinate: Coordinate) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CoordinateValue(
+                label = "纬度",
+                value = formatCoordinate(selectedCoordinate.latitude),
+                modifier = Modifier.weight(1f)
+            )
+            CoordinateValue(
+                label = "经度",
+                value = formatCoordinate(selectedCoordinate.longitude),
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun CoordinateValue(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -869,6 +987,12 @@ private fun SearchPage(
                 keyword = keyword,
                 focusRequester = focusRequester,
                 onKeywordChange = onKeywordChange,
+                onSearch = {
+                    if (trimmedKeyword.isNotBlank()) {
+                        keyboardController?.hide()
+                        onSearchKeyword(trimmedKeyword)
+                    }
+                },
                 onClear = onClear,
                 onBack = closeSearch
             )
@@ -899,32 +1023,28 @@ private fun SearchHeader(
     keyword: String,
     focusRequester: FocusRequester,
     onKeywordChange: (String) -> Unit,
+    onSearch: () -> Unit,
     onClear: () -> Unit,
     onBack: () -> Unit,
 ) {
-    Card(
+    ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
-                .padding(start = 8.dp, end = 4.dp),
+                .height(60.dp)
+                .padding(start = 10.dp, end = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable(onClick = onBack),
-                contentAlignment = Alignment.Center
-            ) {
+            IconButton(onClick = onBack) {
                 Icon(
-                    modifier = Modifier.size(26.dp),
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "返回地图"
                 )
@@ -936,6 +1056,7 @@ private fun SearchHeader(
                 value = keyword,
                 onValueChange = onKeywordChange,
                 singleLine = true,
+                keyboardActions = KeyboardActions(onSearch = { onSearch() }),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     color = MaterialTheme.colorScheme.onSurface
@@ -948,7 +1069,7 @@ private fun SearchHeader(
                     ) {
                         if (keyword.isBlank()) {
                             Text(
-                                text = "搜索地点",
+                                text = "搜索地点、地址或 POI",
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -958,14 +1079,8 @@ private fun SearchHeader(
                 }
             )
             if (keyword.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clickable(onClick = onClear),
-                    contentAlignment = Alignment.Center
-                ) {
+                IconButton(onClick = onClear) {
                     Icon(
-                        modifier = Modifier.size(22.dp),
                         imageVector = Icons.Filled.Clear,
                         contentDescription = "清空搜索"
                     )
@@ -982,25 +1097,23 @@ private fun SearchHistorySection(
     onHistoryDelete: (String) -> Unit,
 ) {
     if (history.isEmpty()) {
-        Text(
-            text = "暂无搜索历史",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        EmptySearchState(text = "暂无搜索历史")
         return
     }
 
-    Text(
-        text = "搜索历史",
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold
-    )
-    history.forEach { item ->
-        SearchHistoryItem(
-            item = item,
-            onSelected = { onHistorySelected(item) },
-            onDelete = { onHistoryDelete(item) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "搜索历史",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
         )
+        history.forEach { item ->
+            SearchHistoryItem(
+                item = item,
+                onSelected = { onHistorySelected(item) },
+                onDelete = { onHistoryDelete(item) }
+            )
+        }
     }
 }
 
@@ -1013,6 +1126,7 @@ private fun SearchHistoryItem(
 ) {
     val deleteActionWidth = 88.dp
     val deleteActionWidthPx = with(LocalDensity.current) { deleteActionWidth.toPx() }
+    val historyItemShape = RoundedCornerShape(16.dp)
     var dragOffset by remember(item) { mutableFloatStateOf(0f) }
     var showActionDialog by remember(item) { mutableStateOf(false) }
 
@@ -1031,6 +1145,7 @@ private fun SearchHistoryItem(
         Surface(
             modifier = Modifier
                 .matchParentSize(),
+            shape = historyItemShape,
             color = MaterialTheme.colorScheme.errorContainer,
             contentColor = MaterialTheme.colorScheme.onErrorContainer
         ) {
@@ -1053,6 +1168,7 @@ private fun SearchHistoryItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .graphicsLayer { translationX = dragOffset }
+                .clip(historyItemShape)
                 .combinedClickable(
                     onClick = onSelected,
                     onLongClick = { showActionDialog = true }
@@ -1071,23 +1187,34 @@ private fun SearchHistoryItem(
                         }
                     }
                 ),
-            color = MaterialTheme.colorScheme.surface
+            shape = historyItemShape,
+            color = MaterialTheme.colorScheme.surfaceContainer
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .height(56.dp)
+                    .padding(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     imageVector = Icons.Filled.Search,
-                    contentDescription = null
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
+                    modifier = Modifier.weight(1f),
                     text = item,
+                    style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
+                )
+                Icon(
+                    modifier = Modifier.size(18.dp),
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -1153,17 +1280,17 @@ private fun SearchResultList(
     results: List<MapSearchResult>,
     onResultSelected: (MapSearchResult) -> Unit,
 ) {
+    if (isSearching) {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    }
+
     when {
         isSearching -> Text(
             text = "正在搜索...",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        statusText.isNotBlank() && results.isEmpty() -> Text(
-            text = statusText,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        statusText.isNotBlank() && results.isEmpty() -> EmptySearchState(text = statusText)
         statusText.isNotBlank() -> Text(
             text = statusText,
             style = MaterialTheme.typography.bodySmall,
@@ -1173,34 +1300,68 @@ private fun SearchResultList(
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(results) { result ->
-            TextButton(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { onResultSelected(result) }
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onResultSelected(result) },
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer
             ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.Start
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = result.title,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                    Icon(
+                        imageVector = Icons.Filled.LocationOn,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
                     )
-                    Text(
-                        text = result.address,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = result.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = result.address.ifBlank { "地址未知" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Icon(
+                        modifier = Modifier.size(18.dp),
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EmptySearchState(text: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Text(
+            modifier = Modifier.padding(16.dp),
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -1636,20 +1797,13 @@ private fun ConfigurationPage(
             statusText = statusText
         )
 
-        CoordinateInput(
-            label = "纬度",
-            value = latitude,
-            onValueChange = onLatitudeChange
-        )
-        CoordinateInput(
-            label = "经度",
-            value = longitude,
-            onValueChange = onLongitudeChange
-        )
-        CoordinateInput(
-            label = "海拔（米）",
-            value = altitude,
-            onValueChange = onAltitudeChange
+        CoordinateInputCard(
+            latitude = latitude,
+            longitude = longitude,
+            altitude = altitude,
+            onLatitudeChange = onLatitudeChange,
+            onLongitudeChange = onLongitudeChange,
+            onAltitudeChange = onAltitudeChange
         )
 
         SettingsCard(
@@ -1659,41 +1813,14 @@ private fun ConfigurationPage(
             onWakeDurationChange = onWakeDurationChange
         )
 
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !isRunning,
-            onClick = onStart
-        ) {
-            Text("开始模拟定位")
-        }
-
-        OutlinedButton(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onStop
-        ) {
-            Text("停止")
-        }
-
-        OutlinedButton(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onRequestPermissions
-        ) {
-            Text("申请权限")
-        }
-
-        TextButton(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onOpenDeveloperSettings
-        ) {
-            Text("打开开发者选项")
-        }
-
-        TextButton(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onOpenApplicationSettings
-        ) {
-            Text("打开应用设置")
-        }
+        ConfigurationActions(
+            isRunning = isRunning,
+            onStart = onStart,
+            onStop = onStop,
+            onRequestPermissions = onRequestPermissions,
+            onOpenDeveloperSettings = onOpenDeveloperSettings,
+            onOpenApplicationSettings = onOpenApplicationSettings
+        )
 
         DiagnosticCard(
             isRunning = isRunning,
@@ -1721,21 +1848,34 @@ private fun StatusCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
+            containerColor = if (isRunning) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            }
         )
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = if (isRunning) "运行中" else "已停止",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            StatusLine("定位权限", hasLocationPermission)
-            StatusLine("通知权限", hasNotificationPermission)
-            StatusLine("模拟位置应用", hasMockLocationPermission)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "运行状态",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                RunningStatePill(isRunning = isRunning)
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatusLine("定位权限", hasLocationPermission)
+                StatusLine("通知权限", hasNotificationPermission)
+                StatusLine("模拟位置应用", hasMockLocationPermission)
+            }
             Text(
                 text = statusText,
                 style = MaterialTheme.typography.bodyMedium,
@@ -1747,10 +1887,60 @@ private fun StatusCard(
 
 @Composable
 private fun StatusLine(label: String, passed: Boolean) {
-    Text(
-        text = "$label：${if (passed) "已就绪" else "待处理"}",
-        style = MaterialTheme.typography.bodyMedium
-    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        PermissionStateBadge(isReady = passed)
+    }
+}
+
+@Composable
+private fun CoordinateInputCard(
+    latitude: String,
+    longitude: String,
+    altitude: String,
+    onLatitudeChange: (String) -> Unit,
+    onLongitudeChange: (String) -> Unit,
+    onAltitudeChange: (String) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "模拟坐标",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            CoordinateInput(
+                label = "纬度",
+                value = latitude,
+                onValueChange = onLatitudeChange
+            )
+            CoordinateInput(
+                label = "经度",
+                value = longitude,
+                onValueChange = onLongitudeChange
+            )
+            CoordinateInput(
+                label = "海拔（米）",
+                value = altitude,
+                onValueChange = onAltitudeChange
+            )
+        }
+    }
 }
 
 @Composable
@@ -1798,9 +1988,10 @@ private fun SettingsCard(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(200L, 500L, 1000L).forEach { value ->
-                    SuggestionChip(
+                    FilterChip(
+                        selected = value == updateIntervalMs,
                         onClick = { onUpdateIntervalChange(value) },
-                        label = { Text(if (value == updateIntervalMs) "${value}ms ✓" else "${value}ms") }
+                        label = { Text("${value}ms") }
                     )
                 }
             }
@@ -1812,9 +2003,10 @@ private fun SettingsCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(0L, 5_000L, 10_000L).forEach { value ->
                     val label = if (value == 0L) "关闭" else "${value / 1000}秒"
-                    SuggestionChip(
+                    FilterChip(
+                        selected = value == wakeDurationMs,
                         onClick = { onWakeDurationChange(value) },
-                        label = { Text(if (value == wakeDurationMs) "$label ✓" else label) }
+                        label = { Text(label) }
                     )
                 }
             }
@@ -1823,13 +2015,14 @@ private fun SettingsCard(
 }
 
 @Composable
-private fun AppUpdateCard(
-    update: AppUpdateUiState,
-    onCheckForUpdates: () -> Unit,
-    onDownloadUpdate: () -> Unit,
+private fun ConfigurationActions(
+    isRunning: Boolean,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onRequestPermissions: () -> Unit,
+    onOpenDeveloperSettings: () -> Unit,
+    onOpenApplicationSettings: () -> Unit,
 ) {
-    val release = update.availableRelease
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -1841,73 +2034,130 @@ private fun AppUpdateCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = "版本更新",
+                text = "快捷操作",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Text(
-                text = "当前版本：${update.currentVersionName.ifBlank { "未知" }}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (release != null) {
-                Text(
-                    text = "发现新版本：${release.tagName}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = "${release.assetName} · ${release.assetSizeBytes.toReadableFileSize()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            } else if (
-                update.message.isNotBlank() &&
-                !update.isDownloading &&
-                !update.isWaitingForInstallPermission &&
-                update.downloadedFileName.isBlank()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = update.message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Button(
+                    modifier = Modifier.weight(1f),
+                    enabled = !isRunning,
+                    onClick = onStart
+                ) {
+                    Text("开始")
+                }
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    enabled = isRunning,
+                    onClick = onStop
+                ) {
+                    Text("停止")
+                }
             }
-            if (update.isDownloading || update.isWaitingForInstallPermission || update.downloadedFileName.isNotBlank()) {
-                Text(
-                    text = update.message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onRequestPermissions
+            ) {
+                Text("申请运行时权限")
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                OutlinedButton(
+                TextButton(
                     modifier = Modifier.weight(1f),
-                    enabled = !update.isChecking && !update.isDownloading,
-                    onClick = onCheckForUpdates
+                    onClick = onOpenDeveloperSettings
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Refresh,
-                        contentDescription = null
-                    )
-                    Text(
-                        modifier = Modifier.padding(start = 8.dp),
-                        text = if (update.isChecking) "检查中" else "检查更新"
-                    )
+                    Text("开发者选项")
                 }
-                if (release != null) {
-                    Button(
-                        modifier = Modifier.weight(1f),
-                        enabled = !update.isDownloading,
-                        onClick = onDownloadUpdate
-                    ) {
-                        Text(if (update.downloadedFileName.isBlank()) "后台下载" else "安装更新")
-                    }
+                TextButton(
+                    modifier = Modifier.weight(1f),
+                    onClick = onOpenApplicationSettings
+                ) {
+                    Text("应用设置")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AboutUpdateContent(
+    update: AppUpdateUiState,
+    onCheckForUpdates: () -> Unit,
+    onDownloadUpdate: () -> Unit,
+) {
+    val release = update.availableRelease
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = "当前版本：${update.currentVersionName.ifBlank { "未知" }}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (release != null) {
+            Text(
+                text = "发现新版本：${release.tagName}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "${release.assetName} · ${release.assetSizeBytes.toReadableFileSize()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        } else if (
+            update.message.isNotBlank() &&
+            !update.isDownloading &&
+            !update.isWaitingForInstallPermission &&
+            update.downloadedFileName.isBlank()
+        ) {
+            Text(
+                text = update.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (update.isDownloading || update.isWaitingForInstallPermission || update.downloadedFileName.isNotBlank()) {
+            Text(
+                text = update.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                modifier = Modifier.weight(1f),
+                enabled = !update.isChecking && !update.isDownloading,
+                onClick = onCheckForUpdates
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Refresh,
+                    contentDescription = null
+                )
+                Text(
+                    modifier = Modifier.padding(start = 8.dp),
+                    text = if (update.isChecking) "检查中" else "检查更新"
+                )
+            }
+            if (release != null) {
+                Button(
+                    modifier = Modifier.weight(1f),
+                    enabled = !update.isDownloading,
+                    onClick = onDownloadUpdate
+                ) {
+                    Text(if (update.downloadedFileName.isBlank()) "后台下载" else "安装更新")
                 }
             }
         }
@@ -1938,12 +2188,7 @@ private fun AboutDialog(
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
-                Text(
-                    text = "包名：com.lipengzhou.mocklocation",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                AppUpdateCard(
+                AboutUpdateContent(
                     update = update,
                     onCheckForUpdates = onCheckForUpdates,
                     onDownloadUpdate = onDownloadUpdate
@@ -2044,15 +2289,15 @@ private fun DiagnosticCard(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Text("服务状态：${if (isRunning) "运行中" else "已停止"}")
-            Text("当前通道：$providerNames")
-            Text("注入次数：$updateCount")
-            Text("注入间隔：${updateIntervalMs}ms")
-            Text("停止恢复：${if (wakeDurationMs == 0L) "关闭" else "${wakeDurationMs / 1000}秒"}")
-            Text("最近停止：$lastStopTime")
-            Text("最近错误：$lastError")
-            Text("GPS Provider：${if (hasGpsProvider) "已开启" else "未开启"}")
-            Text("网络 Provider：${if (hasNetworkProvider) "已开启" else "未开启"}")
+            DiagnosticRow("服务状态", if (isRunning) "运行中" else "已停止")
+            DiagnosticRow("当前通道", providerNames)
+            DiagnosticRow("注入次数", updateCount.toString())
+            DiagnosticRow("注入间隔", "${updateIntervalMs}ms")
+            DiagnosticRow("停止恢复", if (wakeDurationMs == 0L) "关闭" else "${wakeDurationMs / 1000}秒")
+            DiagnosticRow("最近停止", lastStopTime)
+            DiagnosticRow("最近错误", lastError)
+            DiagnosticRow("GPS Provider", if (hasGpsProvider) "已开启" else "未开启")
+            DiagnosticRow("网络 Provider", if (hasNetworkProvider) "已开启" else "未开启")
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = onCopy
@@ -2060,6 +2305,32 @@ private fun DiagnosticCard(
                 Text("复制诊断信息")
             }
         }
+    }
+}
+
+@Composable
+private fun DiagnosticRow(
+    label: String,
+    value: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            modifier = Modifier.widthIn(min = 84.dp, max = 112.dp),
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            modifier = Modifier.weight(1f),
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
