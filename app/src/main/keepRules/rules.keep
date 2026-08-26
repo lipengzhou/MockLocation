@@ -10,3 +10,17 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+
+# AMap SDK uses reflection and JNI callbacks during map engine initialization.
+# Release builds must keep these classes and members to avoid native crashes
+# when the map surface is created.
+-keep class com.amap.api.** { *; }
+-keep class com.autonavi.** { *; }
+-keep class com.loc.** { *; }
+-keepclasseswithmembers class * {
+    native <methods>;
+}
+
+# Optional classes referenced by the bundled AMap SDK artifacts.
+-dontwarn com.amap.ams.gnss.GnssSoftLocator
+-dontwarn net.jafama.FastMath
