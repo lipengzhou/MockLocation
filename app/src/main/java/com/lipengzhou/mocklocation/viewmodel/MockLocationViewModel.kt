@@ -395,7 +395,8 @@ class MockLocationViewModel(
         selectMapPoint(
             gcj02 = result.coordinate,
             selectedMapText = result.displayText(),
-            message = "已从搜索结果回填 WGS84 坐标。"
+            message = "已从搜索结果回填 WGS84 坐标。",
+            moveMapCamera = true
         )
         _uiState.update { state ->
             state.copy(
@@ -416,9 +417,21 @@ class MockLocationViewModel(
             gcj02 = gcj02,
             wgs84 = wgs84,
             selectedMapText = "正在解析位置...",
-            message = "已从地图选点并回填 WGS84 坐标。"
+            message = "已从地图选点并回填 WGS84 坐标。",
+            moveMapCamera = false
         )
         reverseGeocodeMapPoint(gcj02)
+    }
+
+    fun onMapCenterChanged(gcj02: Coordinate, wgs84: Coordinate) {
+        reverseGeocodeJob?.cancel()
+        updateSelectedMapPoint(
+            gcj02 = gcj02,
+            wgs84 = wgs84,
+            selectedMapText = "地图中心位置",
+            message = "已跟随地图中心更新 WGS84 坐标。",
+            moveMapCamera = false
+        )
     }
 
     fun onCoordinateInputConfirmed(
@@ -458,7 +471,8 @@ class MockLocationViewModel(
             gcj02 = gcj02,
             wgs84 = wgs84,
             selectedMapText = "正在解析位置...",
-            message = "已从坐标输入回填 WGS84 坐标。"
+            message = "已从坐标输入回填 WGS84 坐标。",
+            moveMapCamera = true
         )
         reverseGeocodeMapPoint(gcj02)
         return true
@@ -508,7 +522,8 @@ class MockLocationViewModel(
                 gcj02 = gcj02,
                 wgs84 = wgs84,
                 selectedMapText = "当前位置",
-                message = "已定位到当前位置并回填 WGS84 坐标。"
+                message = "已定位到当前位置并回填 WGS84 坐标。",
+                moveMapCamera = true
             )
         }
     }
@@ -652,6 +667,7 @@ class MockLocationViewModel(
         gcj02: Coordinate,
         selectedMapText: String,
         message: String,
+        moveMapCamera: Boolean,
     ) {
         updateSelectedMapPoint(
             gcj02 = gcj02,
@@ -660,7 +676,8 @@ class MockLocationViewModel(
                 longitude = gcj02.longitude
             ),
             selectedMapText = selectedMapText,
-            message = message
+            message = message,
+            moveMapCamera = moveMapCamera
         )
     }
 
@@ -669,6 +686,7 @@ class MockLocationViewModel(
         wgs84: Coordinate,
         selectedMapText: String,
         message: String,
+        moveMapCamera: Boolean,
     ) {
         _uiState.update { state ->
             state.copy(
@@ -676,7 +694,12 @@ class MockLocationViewModel(
                 latitude = formatCoordinate(wgs84.latitude),
                 longitude = formatCoordinate(wgs84.longitude),
                 selectedMapText = selectedMapText,
-                statusText = message
+                statusText = message,
+                mapCameraMoveRequestId = if (moveMapCamera) {
+                    state.mapCameraMoveRequestId + 1
+                } else {
+                    state.mapCameraMoveRequestId
+                }
             )
         }
     }

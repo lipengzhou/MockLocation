@@ -43,18 +43,19 @@ class AppUpdateRepository(context: Context) {
     }
 
     private fun fetchLatestRelease(): AppUpdateRelease {
-        val connection = (URL(LATEST_RELEASE_API_URL).openConnection() as HttpURLConnection).apply {
+        val connection = (URL(UPDATE_MANIFEST_URL).openConnection() as HttpURLConnection).apply {
             connectTimeout = HTTP_TIMEOUT_MS
             readTimeout = HTTP_TIMEOUT_MS
             requestMethod = "GET"
-            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", "MockLocation-Android")
+            useCaches = false
         }
 
         return try {
             val responseCode = connection.responseCode
             if (responseCode !in 200..299) {
-                throw IOException("GitHub Release API 返回 $responseCode")
+                throw IOException("更新清单返回 $responseCode")
             }
 
             val responseText = connection.inputStream.bufferedReader().use { it.readText() }
@@ -65,20 +66,29 @@ class AppUpdateRepository(context: Context) {
     }
 
     private fun JSONObject.toAppUpdateRelease(): AppUpdateRelease {
-        val tagName = optString("tag_name").trim()
-        val versionName = tagName.toVersionName()
-        val title = optString("name").trim().ifBlank { tagName }
-        val releaseUrl = optString("html_url").trim()
-        val releaseNotes = optString("body").trim()
+        val tagName = optString("tagName").trim()
+            .ifBlank { optString("tag_name").trim() }
+        val versionName = optString("versionName").trim()
+            .ifBlank { tagName.toVersionName() }
+        val title = optString("title").trim()
+            .ifBlank { optString("name").trim() }
+            .ifBlank { tagName }
+        val releaseUrl = optString("releaseUrl").trim()
+            .ifBlank { optString("html_url").trim() }
+        val releaseNotes = optString("releaseNotes").trim()
+            .ifBlank { optString("body").trim() }
         val apkAsset = optJSONArray("assets").findApkAsset()
-        val assetName = apkAsset?.optString("name").orEmpty()
-        val downloadUrl = apkAsset?.optString("browser_download_url").orEmpty().ifBlank {
-            releaseUrl
-        }
-        val assetSizeBytes = apkAsset?.optLong("size") ?: 0L
+        val assetName = optString("assetName").trim()
+            .ifBlank { apkAsset?.optString("name").orEmpty() }
+        val downloadUrl = optString("downloadUrl").trim()
+            .ifBlank { apkAsset?.optString("browser_download_url").orEmpty() }
+            .ifBlank { releaseUrl }
+        val assetSizeBytes = longValue("assetSizeBytes")
+            ?: apkAsset?.longValue("size")
+            ?: 0L
 
         if (tagName.isBlank() || versionName.isBlank() || releaseUrl.isBlank() || downloadUrl.isBlank()) {
-            throw IOException("GitHub Release 信息不完整")
+            throw IOException("更新清单信息不完整")
         }
 
         return AppUpdateRelease(
@@ -106,6 +116,13 @@ class AppUpdateRepository(context: Context) {
         return null
     }
 
+    private fun JSONObject.longValue(name: String): Long? =
+        when (val value = opt(name)) {
+            is Number -> value.toLong()
+            is String -> value.trim().toLongOrNull()
+            else -> null
+        }
+
     private fun String.toVersionName(): String =
         VERSION_PATTERN.find(this)?.value.orEmpty()
 
@@ -132,8 +149,8 @@ class AppUpdateRepository(context: Context) {
             .mapNotNull { part -> part.toIntOrNull() }
 
     companion object {
-        private const val LATEST_RELEASE_API_URL =
-            "https://api.github.com/repos/lipengzhou/MockLocation/releases/latest"
+        private const val UPDATE_MANIFEST_URL =
+            "https://cdn.jsdelivr.net/gh/lipengzhou/MockLocation@main/release/update.json"
         private const val HTTP_TIMEOUT_MS = 8_000
         private val VERSION_PATTERN = Regex("""\d+(?:\.\d+)*""")
     }

@@ -39,6 +39,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DeveloperMode
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
@@ -122,6 +123,9 @@ import java.util.Locale
 
 private val AppDrawerMaxWidth = 304.dp
 private const val AppDrawerScreenWidthFraction = 0.84f
+private const val AppAuthor = "李鹏周"
+private const val AppContactEmail = "lpzmail@163.com"
+private const val AppRepositoryUrl = "https://github.com/lipengzhou/MockLocation"
 
 @Composable
 fun MockLocationScreen(
@@ -135,6 +139,7 @@ fun MockLocationScreen(
     onSearchBack: () -> Unit = {},
     onSearchResultSelected: (MapSearchResult) -> Unit = {},
     onSearchHistoryDelete: (String) -> Unit = {},
+    onMapCenterChanged: (gcj02: Coordinate, wgs84: Coordinate) -> Unit = { _, _ -> },
     onPointSelected: (gcj02: Coordinate, wgs84: Coordinate) -> Unit = { _, _ -> },
     onCoordinateInputConfirmed: (
         longitude: String,
@@ -165,6 +170,7 @@ fun MockLocationScreen(
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    var showFeedbackDialog by rememberSaveable { mutableStateOf(false) }
     var showAboutDialog by rememberSaveable { mutableStateOf(false) }
     val shouldShowPermissionGuideOnly =
         !uiState.hasCompletedPermissionGuide || !uiState.permissions.requiredPermissionsReady
@@ -218,6 +224,10 @@ fun MockLocationScreen(
                     onPageSelected(page)
                     scope.launch { drawerState.close() }
                 },
+                onFeedbackClick = {
+                    showFeedbackDialog = true
+                    scope.launch { drawerState.close() }
+                },
                 onAboutClick = {
                     showAboutDialog = true
                     scope.launch { drawerState.close() }
@@ -230,6 +240,7 @@ fun MockLocationScreen(
                 latitude = uiState.selectedCoordinate.latitude,
                 longitude = uiState.selectedCoordinate.longitude,
                 selectedCoordinate = uiState.selectedCoordinate,
+                mapCameraMoveRequestId = uiState.mapCameraMoveRequestId,
                 selectedMapText = uiState.selectedMapText,
                 statusText = uiState.statusText,
                 isRunning = uiState.isRunning,
@@ -237,6 +248,7 @@ fun MockLocationScreen(
                     scope.launch { drawerState.open() }
                 },
                 onSearchClick = onSearchClick,
+                onMapCenterChanged = onMapCenterChanged,
                 onPointSelected = onPointSelected,
                 onCoordinateInputConfirmed = onCoordinateInputConfirmed,
                 onLocateCurrentPosition = onLocateCurrentPosition,
@@ -329,6 +341,12 @@ fun MockLocationScreen(
         )
     }
 
+    if (showFeedbackDialog) {
+        FeedbackDialog(
+            onDismiss = { showFeedbackDialog = false }
+        )
+    }
+
     uiState.update.availableRelease?.takeIf { uiState.update.shouldShowPrompt }?.let {
         AppUpdateDialog(
             update = uiState.update,
@@ -398,7 +416,7 @@ private fun AgreementPage(
                     )
                     AgreementParagraph(
                         index = 4,
-                        text = "搜索关键词、位置和运行状态等数据仅保存在本机，用于改善本地使用体验；应用会访问 GitHub Release 元数据检查版本更新。"
+                        text = "搜索关键词、位置和运行状态等数据仅保存在本机，用于改善本地使用体验；应用会访问公开更新清单检查版本更新。"
                     )
                     AgreementParagraph(
                         index = 5,
@@ -458,6 +476,7 @@ private fun AgreementParagraph(
 private fun AppDrawerContent(
     selectedPage: AppPage,
     onPageSelected: (AppPage) -> Unit,
+    onFeedbackClick: () -> Unit,
     onAboutClick: () -> Unit,
 ) {
     val configuration = LocalConfiguration.current
@@ -529,6 +548,18 @@ private fun AppDrawerContent(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             NavigationDrawerItem(
                 selected = false,
+                onClick = onFeedbackClick,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Filled.Email,
+                        contentDescription = null
+                    )
+                },
+                label = { Text("问题反馈") },
+                colors = drawerItemColors
+            )
+            NavigationDrawerItem(
+                selected = false,
                 onClick = onAboutClick,
                 icon = {
                     Icon(
@@ -548,11 +579,13 @@ private fun MapHomePage(
     latitude: Double,
     longitude: Double,
     selectedCoordinate: Coordinate,
+    mapCameraMoveRequestId: Long,
     selectedMapText: String,
     statusText: String,
     isRunning: Boolean,
     onMenuClick: () -> Unit,
     onSearchClick: () -> Unit,
+    onMapCenterChanged: (gcj02: Coordinate, wgs84: Coordinate) -> Unit,
     onPointSelected: (gcj02: Coordinate, wgs84: Coordinate) -> Unit,
     onCoordinateInputConfirmed: (
         longitude: String,
@@ -572,9 +605,11 @@ private fun MapHomePage(
             initialLatitude = latitude,
             initialLongitude = longitude,
             selectedCoordinate = selectedCoordinate,
+            cameraMoveRequestId = mapCameraMoveRequestId,
             zoomControlsBottomPadding = 272.dp,
             onCoordinateInputClick = { showCoordinateInputDialog = true },
             onLocateCurrentPosition = onLocateCurrentPosition,
+            onMapCenterChanged = onMapCenterChanged,
             onPointSelected = onPointSelected
         )
 
@@ -2171,33 +2206,108 @@ private fun AboutDialog(
     onCheckForUpdates: () -> Unit,
     onDownloadUpdate: () -> Unit,
 ) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "关于",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "模拟定位",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    AboutInfoContent()
+                    AboutUpdateContent(
+                        update = update,
+                        onCheckForUpdates = onCheckForUpdates,
+                        onDownloadUpdate = onDownloadUpdate
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("关闭")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AboutInfoContent() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        AboutInfoRow(label = "作者", value = AppAuthor)
+        AboutInfoRow(label = "联系我", value = AppContactEmail)
+        AboutInfoRow(label = "仓库", value = AppRepositoryUrl)
+    }
+}
+
+@Composable
+private fun AboutInfoRow(
+    label: String,
+    value: String,
+) {
+    Text(
+        text = "$label：$value",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun FeedbackDialog(
+    onDismiss: () -> Unit,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "关于",
+                text = "问题反馈",
                 style = MaterialTheme.typography.titleMedium
             )
         },
         text = {
             Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "模拟定位",
-                    style = MaterialTheme.typography.titleSmall,
+                    text = "发送邮件反馈问题：$AppContactEmail",
+                    style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
-                AboutUpdateContent(
-                    update = update,
-                    onCheckForUpdates = onCheckForUpdates,
-                    onDownloadUpdate = onDownloadUpdate
+                Text(
+                    text = "为了更快定位问题，建议在邮件中附上问题描述、复现步骤、手机型号、Android 版本、应用版本，以及相关截图或录屏。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("关闭")
+                Text("知道了")
             }
         }
     )

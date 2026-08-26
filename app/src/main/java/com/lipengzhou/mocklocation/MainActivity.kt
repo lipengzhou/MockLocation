@@ -210,6 +210,7 @@ class MainActivity : ComponentActivity() {
                     onSearchBack = viewModel::closeSearchPage,
                     onSearchResultSelected = viewModel::selectSearchResult,
                     onSearchHistoryDelete = viewModel::deleteSearchHistory,
+                    onMapCenterChanged = viewModel::onMapCenterChanged,
                     onPointSelected = viewModel::onMapPointSelected,
                     onCoordinateInputConfirmed = viewModel::onCoordinateInputConfirmed,
                     onLocateCurrentPosition = viewModel::locateCurrentPosition,

@@ -23,6 +23,7 @@ data class MockLocationUiState(
         latitude = MockLocationService.DEFAULT_LATITUDE,
         longitude = MockLocationService.DEFAULT_LONGITUDE
     ),
+    val mapCameraMoveRequestId: Long = 0L,
     val selectedPage: AppPage = AppPage.Map,
     val showSearchPage: Boolean = false,
     val search: SearchUiState = SearchUiState(),
