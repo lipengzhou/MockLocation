@@ -7,9 +7,9 @@
 ### 应用信息
 
 - 应用包名：`com.lipengzhou.mocklocation`
-- 当前正式版：`versionName=1.4`，`versionCode=5`
+- 当前正式版：`versionName=1.5`，`versionCode=6`
 - 最低系统版本：`minSdk=31`，即 Android 12+
-- 构建产物路径：`build/release/MockLocation-1.4-release.apk`
+- 构建产物路径：`build/release/MockLocation-1.5-release.apk`
 
 ### 开发版与正式版并存
 
@@ -31,7 +31,7 @@ release.keystoreFile=/path/to/mocklocation-release.jks
 release.signingConfigFile=/path/to/keystore.properties
 release.buildToolsVersion=36.0.0
 release.outputDir=build/release
-release.apkName=MockLocation-1.4-release.apk
+release.apkName=MockLocation-1.5-release.apk
 ```
 
 不要把 keystore、签名口令、真实 `local.properties` 或签名配置文件提交到 git。后续任何正式版升级都必须继续使用同一个 release keystore，否则 Android 会因为签名不一致拒绝覆盖安装，用户只能卸载重装。
@@ -56,7 +56,7 @@ INSTALL_FAILED_UPDATE_INCOMPATIBLE
 
 ```bash
 adb uninstall com.lipengzhou.mocklocation
-adb install build/release/MockLocation-1.4-release.apk
+adb install build/release/MockLocation-1.5-release.apk
 ```
 
 卸载会清掉该应用本地数据。安装完成后可用以下命令确认设备端版本：
