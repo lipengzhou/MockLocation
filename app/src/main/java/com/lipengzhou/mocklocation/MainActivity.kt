@@ -216,10 +216,6 @@ class MainActivity : ComponentActivity() {
                     onLocateCurrentPosition = viewModel::locateCurrentPosition,
                     onStart = viewModel::startMocking,
                     onStop = viewModel::stopMocking,
-                    onRequestPermissions = {
-                        viewModel.onRuntimePermissionRequestStarted()
-                        permissionLauncher.launch(requiredPermissions())
-                    },
                     onRequestLocationPermission = {
                         if (shouldOpenLocationPermissionSettings(uiState.permissions.hasRequestedLocationPermission)) {
                             viewModel.onRuntimePermissionSettingsRequired("定位权限")
@@ -261,10 +257,6 @@ class MainActivity : ComponentActivity() {
                         context.openSettings(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                     },
                     onRefreshRuntimeState = viewModel::refreshRuntimeState,
-                    onCopyDiagnostics = viewModel::copyDiagnostics,
-                    onLatitudeChange = viewModel::onLatitudeChange,
-                    onLongitudeChange = viewModel::onLongitudeChange,
-                    onAltitudeChange = viewModel::onAltitudeChange,
                     onUpdateIntervalChange = viewModel::onUpdateIntervalChange,
                     onWakeDurationChange = viewModel::onWakeDurationChange,
                     onAgreementAccepted = viewModel::acceptAgreement,

@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -149,17 +148,12 @@ fun MockLocationScreen(
     onLocateCurrentPosition: () -> Unit = {},
     onStart: () -> Unit = {},
     onStop: () -> Unit = {},
-    onRequestPermissions: () -> Unit = {},
     onRequestLocationPermission: () -> Unit = {},
     onRequestNotificationPermission: () -> Unit = {},
     onOpenDeveloperSettings: () -> Unit = {},
     onOpenApplicationSettings: () -> Unit = {},
     onOpenLocationSettings: () -> Unit = {},
     onRefreshRuntimeState: () -> Unit = {},
-    onCopyDiagnostics: () -> Unit = {},
-    onLatitudeChange: (String) -> Unit = {},
-    onLongitudeChange: (String) -> Unit = {},
-    onAltitudeChange: (String) -> Unit = {},
     onUpdateIntervalChange: (Long) -> Unit = {},
     onWakeDurationChange: (Long) -> Unit = {},
     onAgreementAccepted: () -> Unit = {},
@@ -212,6 +206,11 @@ fun MockLocationScreen(
         }
         return
     }
+
+    BackHandler(
+        enabled = uiState.selectedPage == AppPage.Configuration && !uiState.showSearchPage,
+        onBack = { onPageSelected(AppPage.Map) }
+    )
 
     ModalNavigationDrawer(
         modifier = modifier,
@@ -280,36 +279,11 @@ fun MockLocationScreen(
             )
 
             AppPage.Configuration -> ConfigurationPage(
-                latitude = uiState.latitude,
-                longitude = uiState.longitude,
-                altitude = uiState.altitude,
-                statusText = uiState.statusText,
-                isRunning = uiState.isRunning,
-                hasLocationPermission = uiState.permissions.hasLocationPermission,
-                hasNotificationPermission = uiState.permissions.hasNotificationPermission,
-                hasMockLocationPermission = uiState.permissions.hasMockLocationPermission,
-                providerNames = uiState.diagnostics.providerNames,
-                updateCount = uiState.diagnostics.updateCount,
                 updateIntervalMs = uiState.diagnostics.updateIntervalMs,
                 wakeDurationMs = uiState.diagnostics.wakeDurationMs,
-                lastStopTime = uiState.diagnostics.lastStopTime,
-                lastError = uiState.diagnostics.lastError,
-                hasGpsProvider = uiState.diagnostics.hasGpsProvider,
-                hasNetworkProvider = uiState.diagnostics.hasNetworkProvider,
-                onMenuClick = {
-                    scope.launch { drawerState.open() }
-                },
-                onLatitudeChange = onLatitudeChange,
-                onLongitudeChange = onLongitudeChange,
-                onAltitudeChange = onAltitudeChange,
+                onBackClick = { onPageSelected(AppPage.Map) },
                 onUpdateIntervalChange = onUpdateIntervalChange,
                 onWakeDurationChange = onWakeDurationChange,
-                onStart = onStart,
-                onStop = onStop,
-                onRequestPermissions = onRequestPermissions,
-                onOpenDeveloperSettings = onOpenDeveloperSettings,
-                onOpenApplicationSettings = onOpenApplicationSettings,
-                onCopyDiagnostics = onCopyDiagnostics,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -522,18 +496,6 @@ private fun AppDrawerContent(
                 colors = drawerItemColors
             )
             NavigationDrawerItem(
-                selected = selectedPage == AppPage.PermissionGuide,
-                onClick = { onPageSelected(AppPage.PermissionGuide) },
-                icon = {
-                    Icon(
-                        imageVector = Icons.Filled.CheckCircle,
-                        contentDescription = null
-                    )
-                },
-                label = { Text("权限引导") },
-                colors = drawerItemColors
-            )
-            NavigationDrawerItem(
                 selected = selectedPage == AppPage.Configuration,
                 onClick = { onPageSelected(AppPage.Configuration) },
                 icon = {
@@ -542,7 +504,7 @@ private fun AppDrawerContent(
                         contentDescription = null
                     )
                 },
-                label = { Text("配置与诊断") },
+                label = { Text("设置") },
                 colors = drawerItemColors
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -1421,6 +1383,7 @@ private fun PermissionGuidePage(
     modifier: Modifier = Modifier,
 ) {
     var refreshRotationTarget by remember { mutableFloatStateOf(0f) }
+    var showMockLocationGuideDialog by rememberSaveable { mutableStateOf(false) }
     val refreshRotation by animateFloatAsState(
         targetValue = refreshRotationTarget,
         animationSpec = tween(durationMillis = 450),
@@ -1485,7 +1448,9 @@ private fun PermissionGuidePage(
             isReady = hasMockLocationPermission,
             actionText = if (hasMockLocationPermission) "已设置" else "打开开发者选项",
             icon = Icons.Filled.DeveloperMode,
-            onAction = onOpenDeveloperSettings
+            onAction = onOpenDeveloperSettings,
+            guideActionText = "查看配置说明",
+            onGuideAction = { showMockLocationGuideDialog = true }
         )
     )
     val readyRequiredCount = requiredSteps.count { it.isReady }
@@ -1576,6 +1541,12 @@ private fun PermissionGuidePage(
             Text("进入应用")
         }
     }
+
+    if (showMockLocationGuideDialog) {
+        MockLocationAppGuideDialog(
+            onDismiss = { showMockLocationGuideDialog = false }
+        )
+    }
 }
 
 private data class PermissionGuideStep(
@@ -1587,6 +1558,8 @@ private data class PermissionGuideStep(
     val icon: ImageVector,
     val onAction: () -> Unit,
     val onSecondaryAction: (() -> Unit)? = null,
+    val guideActionText: String? = null,
+    val onGuideAction: (() -> Unit)? = null,
 )
 
 @Composable
@@ -1690,6 +1663,21 @@ private fun PermissionGuideStepCard(step: PermissionGuideStep) {
                 }
                 PermissionStateBadge(isReady = step.isReady)
             }
+            val guideActionText = step.guideActionText
+            val guideAction = step.onGuideAction
+            if (guideActionText != null && guideAction != null) {
+                TextButton(onClick = guideAction) {
+                    Icon(
+                        modifier = Modifier.size(18.dp),
+                        imageVector = Icons.Filled.Info,
+                        contentDescription = null
+                    )
+                    Text(
+                        modifier = Modifier.padding(start = 6.dp),
+                        text = guideActionText
+                    )
+                }
+            }
             val secondaryActionText = step.secondaryActionText
             val secondaryAction = step.onSecondaryAction
             if (secondaryActionText == null || secondaryAction == null) {
@@ -1732,6 +1720,121 @@ private fun PermissionGuideStepCard(step: PermissionGuideStep) {
 }
 
 @Composable
+private fun MockLocationAppGuideDialog(
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "模拟位置应用配置说明",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "以小米手机为例，可按以下路径完成开发者选项与模拟位置应用配置。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                InstructionSection(
+                    title = "1. 开启开发者选项",
+                    steps = listOf(
+                        "打开系统设置。",
+                        "进入“我的设备”。",
+                        "打开“全部参数与信息”。",
+                        "连续点击 5 次“OS 版本”，直到系统提示已进入开发者模式。"
+                    )
+                )
+                InstructionSection(
+                    title = "2. 选择模拟位置应用",
+                    steps = listOf(
+                        "点击“打开开发者选项”，进入系统开发者选项页面。",
+                        "在开发者选项中滑动到页面底部附近，找到“选择模拟位置信息应用”或“选择模拟位置应用”并打开。",
+                        "在应用列表中选择“模拟位置”。"
+                    )
+                )
+                Text(
+                    text = "完成后返回本应用，点击右上角刷新按钮，确认“模拟位置应用”状态变为“已就绪”。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("知道了")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InstructionSection(
+    title: String,
+    steps: List<String>,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            steps.forEachIndexed { index, text ->
+                InstructionStep(
+                    index = index + 1,
+                    text = text
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InstructionStep(
+    index: Int,
+    text: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            text = "$index.",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            modifier = Modifier.weight(1f),
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
 private fun PermissionStateBadge(isReady: Boolean) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -1761,34 +1864,11 @@ private fun PermissionStateBadge(isReady: Boolean) {
 
 @Composable
 private fun ConfigurationPage(
-    latitude: String,
-    longitude: String,
-    altitude: String,
-    statusText: String,
-    isRunning: Boolean,
-    hasLocationPermission: Boolean,
-    hasNotificationPermission: Boolean,
-    hasMockLocationPermission: Boolean,
-    providerNames: String,
-    updateCount: Long,
     updateIntervalMs: Long,
     wakeDurationMs: Long,
-    lastStopTime: String,
-    lastError: String,
-    hasGpsProvider: Boolean,
-    hasNetworkProvider: Boolean,
-    onMenuClick: () -> Unit,
-    onLatitudeChange: (String) -> Unit,
-    onLongitudeChange: (String) -> Unit,
-    onAltitudeChange: (String) -> Unit,
+    onBackClick: () -> Unit,
     onUpdateIntervalChange: (Long) -> Unit,
     onWakeDurationChange: (Long) -> Unit,
-    onStart: () -> Unit,
-    onStop: () -> Unit,
-    onRequestPermissions: () -> Unit,
-    onOpenDeveloperSettings: () -> Unit,
-    onOpenApplicationSettings: () -> Unit,
-    onCopyDiagnostics: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1804,42 +1884,20 @@ private fun ConfigurationPage(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onMenuClick) {
+            IconButton(onClick = onBackClick) {
                 Icon(
-                    imageVector = Icons.Filled.Menu,
-                    contentDescription = "打开菜单"
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回地图"
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "配置与诊断",
+                    text = "设置",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold
                 )
-                Text(
-                    text = "权限、坐标、稳定性和运行诊断",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
-
-        StatusCard(
-            hasLocationPermission = hasLocationPermission,
-            hasNotificationPermission = hasNotificationPermission,
-            hasMockLocationPermission = hasMockLocationPermission,
-            isRunning = isRunning,
-            statusText = statusText
-        )
-
-        CoordinateInputCard(
-            latitude = latitude,
-            longitude = longitude,
-            altitude = altitude,
-            onLatitudeChange = onLatitudeChange,
-            onLongitudeChange = onLongitudeChange,
-            onAltitudeChange = onAltitudeChange
-        )
 
         SettingsCard(
             updateIntervalMs = updateIntervalMs,
@@ -1847,151 +1905,7 @@ private fun ConfigurationPage(
             onUpdateIntervalChange = onUpdateIntervalChange,
             onWakeDurationChange = onWakeDurationChange
         )
-
-        ConfigurationActions(
-            isRunning = isRunning,
-            onStart = onStart,
-            onStop = onStop,
-            onRequestPermissions = onRequestPermissions,
-            onOpenDeveloperSettings = onOpenDeveloperSettings,
-            onOpenApplicationSettings = onOpenApplicationSettings
-        )
-
-        DiagnosticCard(
-            isRunning = isRunning,
-            providerNames = providerNames,
-            updateCount = updateCount,
-            updateIntervalMs = updateIntervalMs,
-            wakeDurationMs = wakeDurationMs,
-            lastStopTime = lastStopTime,
-            lastError = lastError,
-            hasGpsProvider = hasGpsProvider,
-            hasNetworkProvider = hasNetworkProvider,
-            onCopy = onCopyDiagnostics
-        )
     }
-}
-
-@Composable
-private fun StatusCard(
-    hasLocationPermission: Boolean,
-    hasNotificationPermission: Boolean,
-    hasMockLocationPermission: Boolean,
-    isRunning: Boolean,
-    statusText: String,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isRunning) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainer
-            }
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "运行状态",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                RunningStatePill(isRunning = isRunning)
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatusLine("定位权限", hasLocationPermission)
-                StatusLine("通知权限", hasNotificationPermission)
-                StatusLine("模拟位置应用", hasMockLocationPermission)
-            }
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun StatusLine(label: String, passed: Boolean) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium
-        )
-        PermissionStateBadge(isReady = passed)
-    }
-}
-
-@Composable
-private fun CoordinateInputCard(
-    latitude: String,
-    longitude: String,
-    altitude: String,
-    onLatitudeChange: (String) -> Unit,
-    onLongitudeChange: (String) -> Unit,
-    onAltitudeChange: (String) -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = "模拟坐标",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            CoordinateInput(
-                label = "纬度",
-                value = latitude,
-                onValueChange = onLatitudeChange
-            )
-            CoordinateInput(
-                label = "经度",
-                value = longitude,
-                onValueChange = onLongitudeChange
-            )
-            CoordinateInput(
-                label = "海拔（米）",
-                value = altitude,
-                onValueChange = onAltitudeChange
-            )
-        }
-    }
-}
-
-@Composable
-private fun CoordinateInput(
-    label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-) {
-    OutlinedTextField(
-        modifier = Modifier.fillMaxWidth(),
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-    )
 }
 
 @Composable
@@ -2043,76 +1957,6 @@ private fun SettingsCard(
                         onClick = { onWakeDurationChange(value) },
                         label = { Text(label) }
                     )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConfigurationActions(
-    isRunning: Boolean,
-    onStart: () -> Unit,
-    onStop: () -> Unit,
-    onRequestPermissions: () -> Unit,
-    onOpenDeveloperSettings: () -> Unit,
-    onOpenApplicationSettings: () -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(
-                text = "快捷操作",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Button(
-                    modifier = Modifier.weight(1f),
-                    enabled = !isRunning,
-                    onClick = onStart
-                ) {
-                    Text("开始")
-                }
-                OutlinedButton(
-                    modifier = Modifier.weight(1f),
-                    enabled = isRunning,
-                    onClick = onStop
-                ) {
-                    Text("停止")
-                }
-            }
-            OutlinedButton(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onRequestPermissions
-            ) {
-                Text("申请运行时权限")
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                TextButton(
-                    modifier = Modifier.weight(1f),
-                    onClick = onOpenDeveloperSettings
-                ) {
-                    Text("开发者选项")
-                }
-                TextButton(
-                    modifier = Modifier.weight(1f),
-                    onClick = onOpenApplicationSettings
-                ) {
-                    Text("应用设置")
                 }
             }
         }
@@ -2217,8 +2061,8 @@ private fun AboutDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
                     text = "关于",
@@ -2281,36 +2125,50 @@ private fun AboutInfoRow(
 private fun FeedbackDialog(
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "问题反馈",
-                style = MaterialTheme.typography.titleMedium
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
             )
-        },
-        text = {
+        ) {
             Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "发送邮件反馈问题：$AppContactEmail",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "问题反馈",
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
-                Text(
-                    text = "为了更快定位问题，建议在邮件中附上问题描述、复现步骤、手机型号、Android 版本、应用版本，以及相关截图或录屏。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("知道了")
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "发送邮件反馈问题：$AppContactEmail",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "为了更快定位问题，建议在邮件中附上问题描述、复现步骤、手机型号、Android 版本、应用版本，以及相关截图或录屏。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("知道了")
+                    }
+                }
             }
         }
-    )
+    }
 }
 
 @Composable
@@ -2371,78 +2229,6 @@ private fun Long.toReadableFileSize(): String {
     return String.format(Locale.US, "%.1f MB", megabytes)
 }
 
-@Composable
-private fun DiagnosticCard(
-    isRunning: Boolean,
-    providerNames: String,
-    updateCount: Long,
-    updateIntervalMs: Long,
-    wakeDurationMs: Long,
-    lastStopTime: String,
-    lastError: String,
-    hasGpsProvider: Boolean,
-    hasNetworkProvider: Boolean,
-    onCopy: () -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "运行诊断",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            DiagnosticRow("服务状态", if (isRunning) "运行中" else "已停止")
-            DiagnosticRow("当前通道", providerNames)
-            DiagnosticRow("注入次数", updateCount.toString())
-            DiagnosticRow("注入间隔", "${updateIntervalMs}ms")
-            DiagnosticRow("停止恢复", if (wakeDurationMs == 0L) "关闭" else "${wakeDurationMs / 1000}秒")
-            DiagnosticRow("最近停止", lastStopTime)
-            DiagnosticRow("最近错误", lastError)
-            DiagnosticRow("GPS Provider", if (hasGpsProvider) "已开启" else "未开启")
-            DiagnosticRow("网络 Provider", if (hasNetworkProvider) "已开启" else "未开启")
-            OutlinedButton(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onCopy
-            ) {
-                Text("复制诊断信息")
-            }
-        }
-    }
-}
-
-@Composable
-private fun DiagnosticRow(
-    label: String,
-    value: String,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        Text(
-            modifier = Modifier.widthIn(min = 84.dp, max = 112.dp),
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            modifier = Modifier.weight(1f),
-            text = value,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
 
 @Preview(showBackground = true)
 @Composable

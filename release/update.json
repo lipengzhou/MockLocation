@@ -1,12 +1,12 @@
 {
-  "tagName": "v1.7",
-  "versionName": "1.7",
-  "versionCode": 8,
-  "title": "MockLocation 1.7",
-  "releaseUrl": "https://github.com/lipengzhou/MockLocation/releases/tag/v1.7",
-  "downloadUrl": "https://github.com/lipengzhou/MockLocation/releases/download/v1.7/MockLocation-1.7-release.apk",
-  "assetName": "MockLocation-1.7-release.apk",
-  "assetSizeBytes": 38769663,
-  "sha256": "b8e4cc1b5035a1c4eb2662ef462fd3d7f0e226071371ad1e076d91fa15e3ebfc",
-  "releaseNotes": "更新检查改为 jsDelivr 静态清单，避免 GitHub API 未认证限流。"
+  "tagName": "v1.8",
+  "versionName": "1.8",
+  "versionCode": 9,
+  "title": "MockLocation 1.8",
+  "releaseUrl": "https://github.com/lipengzhou/MockLocation/releases/tag/v1.8",
+  "downloadUrl": "https://github.com/lipengzhou/MockLocation/releases/download/v1.8/MockLocation-1.8-release.apk",
+  "assetName": "MockLocation-1.8-release.apk",
+  "assetSizeBytes": 38753279,
+  "sha256": "e235d561853f421a19b89ea390389587273fcad7ef93cc2a30bde7d03c1db1d9",
+  "releaseNotes": "优化设置页返回行为、权限引导说明和弹窗底部间距。"
 }

@@ -27,22 +27,22 @@
 当前正式版：
 
 - 包名：`com.lipengzhou.mocklocation`
-- 版本：`1.7`（`versionCode=8`）
-- APK：`MockLocation-1.7-release.apk`
+- 版本：`1.8`（`versionCode=9`）
+- APK：`MockLocation-1.8-release.apk`
 
 可从 GitHub Release 下载 APK 后侧载安装。通过非应用商店安装时，需要允许“安装未知来源应用”。
 
 也可以使用 adb 安装：
 
 ```bash
-adb install build/release/MockLocation-1.7-release.apk
+adb install build/release/MockLocation-1.8-release.apk
 ```
 
 如果设备上曾安装过不同签名的同包名版本，覆盖安装可能失败。此时需要先卸载旧版：
 
 ```bash
 adb uninstall com.lipengzhou.mocklocation
-adb install build/release/MockLocation-1.7-release.apk
+adb install build/release/MockLocation-1.8-release.apk
 ```
 
 卸载会清除该应用的本地数据。
